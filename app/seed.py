@@ -222,7 +222,7 @@ EVENT_PROFILE = {
     "Mugs and mezcal: a pottery night": ("workshop", ["art", "design"], "30-39", 55, 2, ["spirits", "snacks"], []),
     "Around Astoria in five plates": ("potluck", ["food culture", "family", "travel"], "30-39", 35, 3, ["condiments", "beverages", "snacks"], ["spirits"]),
 }
-DATA_VERSION = "4"
+DATA_VERSION = "5"
 
 
 NOW = lambda: datetime.now().isoformat(timespec="seconds")
@@ -266,10 +266,48 @@ def seed():
     db.insert("offers", slot_id=slot_ids[(0, "table")], sponsor_id=sp["Spicewell"], from_side="sponsor",
               amount=800, message="We would love to put Spicewell on every place setting. Could you do $800?",
               status="pending", created=NOW())
+    _evidence_demo(slot_ids, sp, s, done)
+
     # A proposal from a host, waiting for the sponsor to decide.
     db.insert("offers", slot_id=slot_ids[(0, "display")], sponsor_id=sp["Sunbrew"], from_side="host",
               amount=600, message="Your cold brew would suit this crowd. The screen runs all night.",
               status="pending", created=NOW())
+
+
+def _evidence_demo(slot_ids, sp, s, done):
+    """Six labeled verification cases. All checks are simulated; the images are drawn in code."""
+    from . import evidence
+    host = lambda i: f"{CLUBS[EVENTS[i][0]]['host_name']} ({CLUBS[EVENTS[i][0]]['name']})"
+
+    def submit(oid, scenario, i):
+        o = db.one("SELECT * FROM orders WHERE id=?", (oid,))
+        slot = db.one("SELECT * FROM slots WHERE id=?", (o["slot_id"],))
+        spn = db.one("SELECT name FROM sponsors WHERE id=?", (o["sponsor_id"],))["name"]
+        evidence.run(o, evidence.sample_files(slot, spn, scenario, slot["photos_required"]), scenario, host(i),
+                     note="Demo submission", checkins=None)
+
+    # 1 to 3: a three-placement package at Psychic Telephone, each placement checked on its own
+    ev = 10
+    types = [("drink", "authentic"), ("menu", "reused"), ("display", "ai_signals")]
+    prices = {t: db.one("SELECT price FROM slots WHERE id=?", (slot_ids[(ev, t)],))["price"] for t, _ in types}
+    total = sum(prices.values())
+    did = db.insert("deals", sponsor_id=sp["Copperhollow"], event_id=db.one("SELECT event_id FROM slots WHERE id=?", (slot_ids[(ev, "drink")],))["event_id"],
+                    package_id=None, name="Custom package", list_total=total, discount=round(total * 0.05, 2),
+                    price=round(total * 0.95, 2), created=NOW())
+    for t, scenario in types:
+        oid = _order(slot_ids[(ev, t)], sp["Copperhollow"], round(prices[t] * 0.95, 2), "package", s, "in_escrow", paid=True)
+        db.update("orders", oid, deal_id=did)
+        submit(oid, scenario, ev)
+    # 4: not enough evidence
+    oid = _order(slot_ids[(13, "gift")], sp["Glowlab"], 450, "buy", s, "in_escrow", paid=True)
+    submit(oid, "insufficient", 13)
+    # 5: unclear, sent to a person
+    oid = _order(slot_ids[(11, "gift")], sp["Leafline"], 700, "buy", s, "in_escrow", paid=True)
+    submit(oid, "needs_review", 11)
+    # 6: the completed deal gets its authentic proof on record
+    db.update("orders", done, status="in_escrow")
+    submit(done, "authentic", 5)
+    db.update("orders", done, status="released", note="Paid out to host", signoff="confirmed")
 
 
 TIER_INFO = {

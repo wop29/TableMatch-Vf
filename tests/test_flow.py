@@ -134,7 +134,7 @@ def test_bad_photos_are_rejected_and_funds_stay_held():
     assert c.post(f"/api/orders/{o['id']}/release", json={"confirm": True}).status_code == 409
 
 
-def test_real_upload_in_demo_mode_goes_to_human_review():
+def test_real_upload_always_passes_in_the_prototype():
     fresh()
     import io
 
@@ -149,13 +149,12 @@ def test_real_upload_in_demo_mode_goes_to_human_review():
     o = c.post(f"/api/slots/{slot(ev, 'menu')['id']}/buy", json={"sponsor_id": sponsor("Spicewell")["id"]}).json()
     c.post(f"/api/orders/{o['id']}/pay")
     o = c.post(f"/api/orders/{o['id']}/proof", files=[("files", ("table.jpg", buf.getvalue(), "image/jpeg"))]).json()
-    assert o["status"] == "under_review"
-    o = c.post(f"/api/orders/{o['id']}/review", json={"decision": "approve", "note": "Logo visible"}).json()
-    assert o["status"] == "ready_for_payout"
+    assert o["status"] == "ready_for_payout" and o["latest_proof"]["risk_band"] == "low"
+    assert o["files"][0]["sha256"] and len(o["files"][0]["sha256"]) == 64
     assert c.post("/api/orders/%d/proof" % o["id"], data={"scenario": "good"}).status_code == 409
 
 
-def test_not_enough_photos_is_rejected():
+def test_video_and_too_few_photos_still_pass_in_the_prototype():
     fresh()
     ev = event("Smoke and stone fruit")
     drink = slot(ev, "drink")                          # needs 2 photos
@@ -166,8 +165,10 @@ def test_not_enough_photos_is_rejected():
     Image.new("RGB", (900, 600), (90, 90, 90)).save(buf, "JPEG")
     o = c.post(f"/api/slots/{drink['id']}/buy", json={"sponsor_id": sponsor("Tidewell")["id"]}).json()
     c.post(f"/api/orders/{o['id']}/pay")
-    o = c.post(f"/api/orders/{o['id']}/proof", files=[("files", ("a.jpg", buf.getvalue(), "image/jpeg"))]).json()
-    assert o["latest_proof"]["decision"] == "rejected" and o["status"] == "in_escrow"
+    o = c.post(f"/api/orders/{o['id']}/proof", files=[("files", ("a.jpg", buf.getvalue(), "image/jpeg")),
+                                                      ("files", ("clip.mp4", b"\x00\x00fake-video", "video/mp4"))]).json()
+    assert o["status"] == "ready_for_payout"
+    assert {f["kind"] for f in o["files"]} == {"photo", "video"}
 
 
 # --- bids and proposals ---------------------------------------------------------------------------
@@ -313,7 +314,7 @@ def test_event_types_and_interest_counts():
     assert [x["event"]["title"] for x in r["results"]] == ["The Ex Files: swap out your ex's stuff"]
     assert r["results"][0]["event"]["interested"] == 640
     r = c.post("/api/search/events", json={"query": "creatives on the lower east side"}).json()
-    assert r["results"][0]["event"]["neighborhood"] == "Lower East Side"
+    assert "Lower East Side" in r["parsed"]["places"]  # Psychic Telephone itself is sold out in the demo data
 
 
 def test_proof_links_checkins_and_sponsor_signoff():
@@ -388,3 +389,52 @@ def test_host_creates_edits_and_deletes_packages():
     assert any(p["name"] == "Finish line plus" for p in pks)
     pks = c.delete(f"/api/packages/{mine['id']}").json()
     assert not any(p["id"] == mine["id"] for p in pks)
+
+
+
+# --- evidence verification (prototype, simulated) ---------------------------------------------
+def test_six_seeded_verification_cases():
+    fresh()
+    orders = c.get("/api/orders").json()
+    by = {o["latest_proof"]["scenario"]: o for o in orders if o["latest_proof"] and o["latest_proof"].get("scenario")}
+    assert by["authentic"]["status"] in ("ready_for_payout", "released")
+    assert by["reused"]["status"] == "under_review" and by["reused"]["latest_proof"]["risk_band"] == "high"
+    assert by["reused"]["latest_proof"]["triggers"]  # duplicate forces review whatever the score
+    assert by["ai_signals"]["status"] == "under_review"
+    assert by["insufficient"]["status"] == "in_escrow"
+    assert by["needs_review"]["status"] == "under_review" and by["needs_review"]["latest_proof"]["risk_band"] == "medium"
+    assert any(o["status"] == "released" and o["latest_proof"] for o in orders)
+    # a package keeps a status per placement
+    pkg = [o for o in orders if o["deal_id"] and o["sponsor"]["name"] == "Copperhollow"]
+    assert len({o["status"] for o in pkg}) >= 2
+
+
+def test_reviewer_actions_need_reasons_and_are_audited():
+    fresh()
+    o = next(o for o in c.get("/api/orders?status=under_review").json() if o["latest_proof"]["scenario"] == "ai_signals")
+    assert c.post(f"/api/orders/{o['id']}/review", json={"decision": "reject"}).status_code == 400
+    r = c.post(f"/api/orders/{o['id']}/review", json={"decision": "flag_fraud", "note": "Looks generated"}).json()
+    assert r["fraud_flag"] == 1 and r["status"] == "under_review"
+    r = c.post(f"/api/orders/{o['id']}/review", json={"decision": "request_evidence", "note": "Send the original files"}).json()
+    assert r["status"] == "in_escrow"
+    ev = c.get(f"/api/orders/{o['id']}/evidence").json()
+    actions = [a["action"] for a in ev["audit"]]
+    assert "flag_fraud" in actions and "request_evidence" in actions and "evidence_submitted" in actions
+    assert ev["submissions"][0]["findings"] and ev["submissions"][0]["files"][0]["original"]
+
+
+def test_face_blur_keeps_original_and_capture_code_is_recorded():
+    fresh()
+    import io
+
+    from PIL import Image
+    buf = io.BytesIO()
+    Image.new("RGB", (800, 600), (150, 120, 100)).save(buf, "JPEG")
+    ev = event("Late noodle night")
+    o = c.post(f"/api/slots/{slot(ev, 'menu')['id']}/buy", json={"sponsor_id": sponsor("Spicewell")["id"]}).json()
+    c.post(f"/api/orders/{o['id']}/pay")
+    code = c.post(f"/api/events/{ev['id']}/capture").json()["token"]
+    c.post(f"/api/orders/{o['id']}/proof", files=[("files", ("p.jpg", buf.getvalue(), "image/jpeg"))],
+           data={"blur_faces": "1", "capture": code, "note": "Menus on every seat"})
+    f = c.get(f"/api/orders/{o['id']}/evidence").json()["submissions"][0]["files"][0]
+    assert f["blurred"] == 1 and f["original"] != f["shared"] and f["capture_session"] == code

@@ -108,3 +108,19 @@ The weights are starting points to validate with users. They are not tuned resul
 - **One agreement, one payment:** a package is reserved as one deal and paid once into escrow. The fee cap applies to the whole deal. Each placement keeps its own proof, verification, sign-off, payout and refund.
 - **Conflicts:** sold placements make a package unavailable. Category exclusivity and sponsor caps apply to the whole package.
 - **My deals:** one card per sponsorship, showing the cover photo, event facts, the stage (before the event, after it, completed), the price and any savings, and a deliverables breakdown. Each placement shows an illustrative preview, what it covers, the delivery date, the proof needed and its own status. A proof gallery shows only the photos the host uploaded. There is a printable report and a "book again" link.
+
+## Evidence verification (prototype)
+
+Everything here is a mock-up. Nothing calls an outside service, real uploads always pass, and videos are stored and fingerprinted but not analyzed.
+
+- **Pipeline** (`app/evidence.py`): five swappable modules.
+  - ingestion (real: original kept, SHA-256 hash, timestamp, basic camera metadata)
+  - provenance and authenticity (simulated: content credentials, metadata, duplicates, AI-generation signals, editing)
+  - visual check (simulated: brand, placement, setting, quantity, clarity)
+  - risk score (0 to 100, weighted, with must-review rules)
+  - decision (low risk is verified, medium needs more evidence or a person, high must be reviewed)
+- **Host Evidence center:** every paid placement shows what was agreed, the quantity, the evidence needed, the delivery date and deadline, and its status. Hosts upload photos or video, add a note, links and a check-in count, and can blur faces (a prototype that softens the top of each photo in the copy the sponsor sees, while the original is kept for reviewers). There's a phone capture session with a placeholder QR code, submission history, and five "Demo: simulate a result" buttons.
+- **Verification screen (Platform):** cases sorted by risk. Each case shows the agreement, original files with hashes and metadata, findings marked "Simulated", the risk breakdown, history and the audit trail. Actions are approve, reject, request more evidence, escalate to dispute and flag suspected fraud. Every action except approve needs a reason, and every action is logged.
+- **Sponsors:** each placement shows its own verification status and explanation, the host's evidence, and a report with file fingerprints.
+- **Seeded demo cases:** authentic, reused photo, AI-generation signals, not enough evidence, needs a person, and a completed deal.
+- **Money:** AI findings never reject a host or move money. Payouts and refunds still need a person.

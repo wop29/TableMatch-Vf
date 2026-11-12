@@ -30,14 +30,15 @@ const S = {
 
 const TABS = {
   sponsor: [["find", "Find events"], ["deals", "My deals"]],
-  host: [["dinners", "My events"], ["sponsors", "Find sponsors"], ["inbox", "Inbox"]],
-  platform: [["overview", "Overview"], ["review", "Review queue"], ["payouts", "Payouts"], ["fees", "Fees"]],
+  host: [["dinners", "My events"], ["sponsors", "Find sponsors"], ["inbox", "Inbox"], ["evidence", "Evidence"]],
+  platform: [["overview", "Overview"], ["review", "Verification"], ["payouts", "Payouts"], ["fees", "Fees"]],
 };
 const TAB_ICON = {
   find: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L21 21"/>',
   deals: '<path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/>',
   dinners: '<path d="M3 10h18"/><path d="M6 10v10M18 10v10"/><circle cx="8" cy="5" r="1.5"/><circle cx="12" cy="5" r="1.5"/><circle cx="16" cy="5" r="1.5"/>',
   sponsors: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.6-3.6 3.3-5.5 6.5-5.5s5.9 1.9 6.5 5.5"/><path d="M17 5.5a3.2 3.2 0 010 6M18.5 14.8c2 .6 3.2 2.2 3.5 5"/>',
+  evidence: '<rect x="3" y="6" width="18" height="14" rx="2"/><circle cx="12" cy="13" r="3.5"/><path d="M8 6l1.5-2h5L16 6"/>',
   inbox: '<path d="M3 13l3-8h12l3 8v6H3z"/><path d="M3 13h5l1.5 2.5h5L16 13h5"/>',
   overview: '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>',
   review: '<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
@@ -69,6 +70,7 @@ function toast(msg, bad) {
 }
 function dialog(html) {
   const d = $("#dlg");
+  d.classList.remove("wide");
   d.innerHTML = `<div class="dlg">${html}</div>`;
   if (!d.open) d.showModal();
   return d;
@@ -107,16 +109,22 @@ function tracker(o) {
 function proofBlock(o, withNote = true) {
   const p = o.latest_proof;
   if (!p) return "";
-  const who = p.mode === "claude" ? "AI check" : "Demo check";
+  const who = p.mode === "claude" ? "AI check" : "Simulated check";
   const tone = p.decision === "verified" ? "" : p.decision === "rejected" ? "bad" : "warn";
   return `<div class="proof">
-    <div class="photos">${p.photos.map(u => `<a href="${esc(u)}" target="_blank" rel="noopener"><img src="${esc(u)}" alt="Placement photo submitted by the host"></a>`).join("")}</div>
+    <div class="photos">${p.photos.map(u => `<a href="${esc(u)}" target="_blank" rel="noopener"><img src="${esc(u)}" alt="Placement photo submitted by the host"></a>`).join("")}
+      ${(o.files || []).filter(f => f.kind === "video").map(f => `<a class="vid" href="${esc(f.shared)}" target="_blank" rel="noopener">Video<br><small>${esc(f.sha256.slice(0, 10))}…</small></a>`).join("")}</div>
+    ${p.risk_band ? `<p class="sub">Risk ${riskBadge(p)} ${p.host_note ? `Host's note: “${esc(p.host_note)}”` : ""}</p>` : ""}
     <ul class="checks">${p.checks.map(c => `<li>${c.ok ? IC.ok : IC.no}<span>${esc(c.label)}</span></li>`).join("")}</ul>
     ${(p.links || []).length ? `<p class="sub">Post links: ${p.links.map(u => `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(u.replace(/^https?:\/\//, "").slice(0, 40))}</a>`).join(", ")}</p>` : ""}
     ${withNote ? `<p class="note ${tone}"><b>${who}: ${pill(p.decision, p.decision.replaceAll("_", " "))}</b> ${Math.round(p.confidence * 100)}% confidence. ${esc(p.notes)}${p.reviewer_note ? ` Reviewer: ${esc(p.reviewer_note)}` : ""}</p>` : ""}
   </div>`;
 }
 
+function riskBadge(p) {
+  const b = String(p.risk_band || "");
+  return `<span class="risk r-${esc(b)}">${esc(b.charAt(0).toUpperCase() + b.slice(1))} risk, ${p.risk_score}/100</span>`;
+}
 function tent(s, { dim = false, actions = "" } = {}) {
   return `<div class="tent ${dim ? "dim" : ""}">
     <div class="tent-top"><h4>${esc(s.title)}</h4><p>${esc(s.specs)}</p><small>Proof: ${plural(s.photos_required, "photo")}</small></div>
@@ -473,11 +481,12 @@ function dealCard(g, sp) {
             ${o.status === "ready_for_payout" && !o.signoff ? `<div class="note signoff"><b>Verified.</b> Confirm it looks right, or dispute it. It confirms itself after 72 hours.
               <span class="acts" style="margin-top:8px"><button class="btn primary small" data-act="signoff" data-id="${o.id}" data-d="confirm">Confirm placement</button><button class="btn small" data-act="signoff" data-id="${o.id}" data-d="dispute">Dispute</button></span></div>` : ""}
             ${o.signoff ? `<p class="sub">${o.signoff === "confirmed" ? "You confirmed this placement." : "You disputed this placement. Tablematch is reviewing it."}</p>` : ""}
-            ${p ? `<details><summary>Proof from the host (${plural(p.photos.length, "photo")})</summary>${proofBlock(o)}</details>` : ""}
+            ${p ? `<p class="sub verif-line">Verification: ${riskBadge(p)} ${esc(o.status === "under_review" ? "A Tablematch reviewer is checking this before any payout." : p.notes)}</p>` : `<p class="sub verif-line">Evidence due by ${fmtDate(o.deadline)}.</p>`}
+            ${p ? `<details><summary>Evidence from the host (${plural(p.photos.length + (o.files || []).filter(f => f.kind === "video").length, "file")})</summary>${proofBlock(o)}</details>` : ""}
           </div></div>`;
       }).join("")}
     </section>
-    ${photos.length ? `<section class="gallery-proof"><h3>Proof gallery</h3><p class="sub">Photos the host uploaded, labeled by placement. These are the actual evidence.</p>
+    ${photos.length ? `<section class="gallery-proof"><h3>Verification and proof</h3><p class="sub">Photos the host uploaded, labeled by placement. These are the actual evidence.</p>
       <div class="pg">${photos.map(({ u, o }) => `<figure><a href="${esc(u)}" target="_blank" rel="noopener"><img src="${esc(u)}" alt="Proof for ${esc(o.slot.title)}" loading="lazy"></a><figcaption>${esc(o.slot.title)} <span class="dstat ds-${delivStatus(o)[0]}">${esc(delivStatus(o)[1])}</span></figcaption></figure>`).join("")}</div></section>` : ""}
     <footer class="deal-foot">
       ${verified ? `<button class="btn small" data-act="report" data-key="${esc(g.key)}">Download sponsorship report</button>` : ""}
@@ -499,9 +508,10 @@ function openReport(key) {
     <button onclick="print()">Save as PDF</button>
     <small>Tablematch sponsorship report</small><h1>${esc(sp.name)} at ${esc(ev.title)}</h1>
     <p>${esc(o0.club.name)}, ${fmtDate(ev.date)}, ${esc(ev.neighborhood)}. ${ev.guests} guests expected. ${esc(g.deal ? g.deal.name : o0.slot.title)}, ${money(g.deal ? g.deal.price : o0.price)}.</p>
-    ${rows.map(o => `<div class="p"><b>${esc(o.slot.title)}</b><br><small>${esc(o.slot.specs)} Verified ${o.status === "released" ? "and paid out" : ""}${o.signoff === "confirmed" ? ", confirmed by you" : ""}.</small>
+    ${rows.map(o => `<div class="p"><b>${esc(o.slot.title)}</b><br><small>${esc(o.slot.specs)} Verified ${o.status === "released" ? "and paid out" : ""}${o.signoff === "confirmed" ? ", confirmed by you" : ""}. ${o.latest_proof && o.latest_proof.risk_band ? `Risk ${o.latest_proof.risk_band} (${o.latest_proof.risk_score}/100, simulated checks).` : ""}</small>
       <ul>${(o.latest_proof ? o.latest_proof.checks : []).map(c => `<li>${c.ok ? "Passed" : "Flag"}: ${esc(c.label)}</li>`).join("")}</ul>
-      <div class="imgs">${(o.latest_proof ? o.latest_proof.photos : []).map(u => `<img src="${location.origin + u}" alt="">`).join("")}</div></div>`).join("")}
+      <div class="imgs">${(o.latest_proof ? o.latest_proof.photos : []).map(u => `<img src="${location.origin + u}" alt="">`).join("")}</div>
+      <p><small>File fingerprints (SHA-256): ${(o.files || []).map(f => esc(f.sha256.slice(0, 16)) + "…").join(", ")}</small></p></div>`).join("")}
     <p><small>Only verified placements and their real proof photos are included. Previews are not.</small></p></body></html>`);
   w.document.close();
 }
@@ -524,6 +534,43 @@ async function sponsorDeals() {
 }
 
 // ------------------------------------------------------------ host views
+async function hostEvidence() {
+  const c = club();
+  const orders = (await api(`/api/orders?club_id=${c.id}`)).filter(o => !["awaiting_payment", "refunded"].includes(o.status));
+  const todo = orders.filter(o => o.status === "in_escrow");
+  const scen = S.meta.scenarios || {};
+  const row = o => {
+    const p = o.latest_proof;
+    const [st, stLabel] = delivStatus(o);
+    const asked = o.status === "in_escrow" && p;
+    return `<article class="ev-item">
+      <div class="ev-item-head"><div><small class="pid">Placement #${o.id}${o.deal_id ? ` in deal #${o.deal_id}` : ""}</small><h3>${esc(o.slot.title)} for ${esc(o.sponsor.name)}</h3>
+        <p class="sub">${esc(o.event.title)}, ${fmtDate(o.event.date)}</p></div><span class="dstat ds-${st}">${esc(stLabel)}</span></div>
+      <dl class="deliv-facts wide"><div><dt>What was agreed</dt><dd>${esc(o.slot.specs)}</dd></div><div><dt>Quantity</dt><dd>${esc(units(o.slot.type, o.event.guests))}</dd></div>
+        <div><dt>Evidence needed</dt><dd>${plural(o.slot.photos_required, "photo")}, video optional</dd></div><div><dt>Delivered</dt><dd>${fmtDate(o.event.date)}</dd></div><div><dt>Submit by</dt><dd>${fmtDate(o.deadline)}</dd></div></dl>
+      ${asked ? `<p class="note bad"><b>What to fix:</b> ${esc(o.note || p.notes)}${p.reviewer_note ? ` Reviewer: ${esc(p.reviewer_note)}` : ""}</p>` : ""}
+      ${o.status === "under_review" ? `<p class="note warn">${esc(o.note || "A reviewer is checking your evidence.")} Your funds stay protected meanwhile.</p>` : ""}
+      ${["ready_for_payout", "released"].includes(o.status) ? `<p class="note">Verified. ${o.status === "released" ? "Paid out." : "Tablematch is preparing your payout."}</p>` : ""}
+      ${o.status === "in_escrow" ? `<form class="evform" data-form="proof" data-id="${o.id}">
+        <label class="field"><span>Photos or video</span><input type="file" name="files" accept="image/*,video/*" multiple required></label>
+        <label class="field"><span>Anything we should know? <span class="hint">Optional</span></span><textarea name="note" rows="2" placeholder="For example: the welcome drink was served at the bar, see photo 2"></textarea></label>
+        <div class="two"><label class="field"><span>Links to posts <span class="hint">Optional</span></span><textarea name="links" rows="1" placeholder="https://..."></textarea></label>
+        <label class="field"><span>Guests who checked in <span class="hint">Optional</span></span><input name="checkins" type="number" min="0" step="any" placeholder="${o.event.guests}"></label></div>
+        <label class="check"><input type="checkbox" name="blur" checked> Blur guests' faces in the copy the sponsor sees (prototype: softens the top of each photo)</label>
+        <input type="hidden" name="capture" value="${esc(S.capture && S.capture.ev === o.event.id ? S.capture.token : "")}">
+        <span class="acts"><button class="btn primary small" type="submit">Submit evidence</button><button type="button" class="btn small" data-act="capture" data-ev="${o.event.id}" data-id="${o.id}">Capture with phone</button></span>
+      </form>
+      <div class="samples"><span>Demo: simulate a result</span>${Object.entries(scen).map(([k, v]) => `<button class="chip" data-act="sample" data-id="${o.id}" data-s="${k}">${esc(v)}</button>`).join("")}</div>` : ""}
+      ${o.proofs.length ? `<details><summary>Submission history (${o.proofs.length})</summary><ul class="hist">${o.proofs.map(x => `<li><span>${esc(x.created.replace("T", " "))}</span><span>${x.risk_band ? riskBadge(x) : ""}</span><span>${esc(x.decision.replaceAll("_", " "))}</span><span class="sub">${esc(x.reviewer_note || x.notes)}</span></li>`).join("")}</ul>${proofBlock(o, false)}</details>` : ""}
+    </article>`;
+  };
+  return `<section class="intro"><h1>Evidence center</h1><p class="lede">Show that each placement happened. Every placement is checked on its own, and you are paid for each one once it is verified.</p>
+    <p class="proto-note">Prototype: checks are simulated and real uploads always pass. Originals are stored with a SHA-256 fingerprint and never overwritten.</p></section>
+  <dl class="stats"><div><dt>Waiting for your evidence</dt><dd>${todo.length}</dd></div><div><dt>Being reviewed</dt><dd>${orders.filter(o => o.status === "under_review").length}</dd></div><div><dt>Verified</dt><dd>${orders.filter(o => ["ready_for_payout", "released"].includes(o.status)).length}</dd></div></dl>
+  ${orders.length ? `<div class="ev-list">${orders.sort((a, b) => (a.status === "in_escrow" ? 0 : 1) - (b.status === "in_escrow" ? 0 : 1)).map(row).join("")}</div>` : `<p class="empty">No paid placements yet. Evidence is needed once a sponsor has paid.</p>`}`;
+}
+
+// ------------------------------------------------------------ host views (events)
 async function hostDinners() {
   const c = club();
   const events = await api(`/api/events?club_id=${c.id}`);
@@ -617,17 +664,8 @@ async function hostInbox() {
     const need = o.slot.photos_required;
     let body = "";
     if (o.status === "awaiting_payment") body = `<p class="note warn">Waiting for ${esc(o.sponsor.name)} to pay. Nothing to do yet.</p>`;
-    if (o.status === "in_escrow") body = `<p class="note">${esc(o.sponsor.name)} has paid and ${money(o.price)} is held in escrow. Upload ${plural(need, "photo")} showing the ${esc(o.slot.title.toLowerCase())} at the dinner, with their branding clear.</p>
-      ${o.latest_proof ? `<p class="note bad" style="margin-top:8px">Your last photos did not pass. Retake and submit again.</p>${proofBlock(o)}` : ""}
-      <form class="upload proofform" data-form="proof" data-id="${o.id}">
-        <label class="field"><span>Placement photos</span><input type="file" name="files" accept="image/*" multiple required></label>
-        <label class="field"><span>Links to posts that tag ${esc(o.sponsor.name)} <span class="hint">Optional, one per line</span></span><textarea name="links" rows="2" placeholder="https://www.instagram.com/p/..."></textarea></label>
-        <label class="field"><span>Guests who checked in <span class="hint">Optional, from your door list or check-in code</span></span><input name="checkins" type="number" min="0" step="any" placeholder="${o.event.guests}"></label>
-        <button class="btn primary small" type="submit">Submit proof</button></form>
-      <div class="samples"><span>No photos handy? Try a sample:</span>
-        <button class="chip" data-act="sample" data-id="${o.id}" data-s="good">Clear photo</button>
-        <button class="chip" data-act="sample" data-id="${o.id}" data-s="blurry">Blurry photo</button>
-        <button class="chip" data-act="sample" data-id="${o.id}" data-s="wrong_brand">Wrong brand</button></div>`;
+    if (o.status === "in_escrow") body = `<p class="note">${esc(o.sponsor.name)} has paid and ${money(o.price)} is held in escrow. Submit proof in the Evidence center.</p>
+      <p style="margin-top:8px"><button class="btn small" data-act="goto" data-role="host" data-tab="evidence">Open Evidence center</button></p>`;
     if (o.status === "under_review") body = `<p class="note warn">The photos need a person to look at them. This is in the Tablematch review queue, and your funds stay protected.</p>${proofBlock(o, false)}`;
     if (o.status === "ready_for_payout") body = `<p class="note">Verified. Tablematch is preparing your payout.</p>${proofBlock(o, false)}<div style="margin-top:10px">${ticket(o.estimate, { sponsorLabel: "Sponsor paid", netLabel: "You receive" })}</div>`;
     if (o.status === "released") body = `<div style="margin-top:10px">${ticket({ price: o.price, fee: o.fee, net: o.net, rate: o.estimate.rate, cap: o.estimate.cap, capped: o.fee < o.price * o.estimate.rate - 0.005 }, { stamp: true, netLabel: "You received" })}</div>`;
@@ -681,11 +719,18 @@ function perfHTML(p) {
 }
 
 async function platReview() {
-  const orders = (await api("/api/orders?status=under_review"));
-  return `<section class="intro"><h1>Review queue</h1><p class="lede">Photos the AI could not judge with enough confidence land here. Approve them to unlock the payout, or ask the host for new photos.</p></section>
-  ${orders.length ? `<div class="rows">${orders.map(o => `<div class="row"><div><h3>${esc(o.slot.title)} for ${esc(o.sponsor.name)}</h3><p class="sub">${esc(o.event.title)} hosted by ${esc(o.club.name)}. Expected: ${esc(o.slot.specs)}</p>${proofBlock(o)}
-      <label class="field" style="margin-top:10px"><span>Note to the host <span class="hint">Optional</span></span><input id="rv-${o.id}" type="text" placeholder="For example: logo is hidden behind the glass"></label></div>
-      <div class="side"><b class="price num">${money(o.price)}</b><span class="acts"><button class="btn primary small" data-act="review" data-id="${o.id}" data-d="approve">Approve photos</button><button class="btn small danger" data-act="review" data-id="${o.id}" data-d="reject">Ask for new photos</button></span></div></div>`).join("")}</div>` : `<p class="empty">Nothing to review. Submit a real photo as a host in demo mode to see an item here.</p>`}`;
+  const [all, audit] = await Promise.all([api("/api/orders"), api("/api/audit?limit=25")]);
+  const queue = all.filter(o => o.status === "under_review" || (o.status === "in_escrow" && o.latest_proof));
+  queue.sort((a, b) => (b.latest_proof ? b.latest_proof.risk_score || 0 : 0) - (a.latest_proof ? a.latest_proof.risk_score || 0 : 0));
+  const done = all.filter(o => ["ready_for_payout", "released"].includes(o.status) && o.latest_proof);
+  const rowOf = o => { const p = o.latest_proof; return `<div class="row"><div><small class="pid">Placement #${o.id}${o.deal_id ? `, deal #${o.deal_id}` : ""}</small><h3>${esc(o.slot.title)}: ${esc(o.sponsor.name)} at ${esc(o.event.title)}</h3>
+      <p class="sub">${esc(o.club.name)}. ${esc(o.note || "")}</p>${p && (p.triggers || []).length ? `<p class="sub bad-t">Must review: ${esc(p.triggers[0])}</p>` : ""}</div>
+      <div class="side">${p && p.risk_band ? riskBadge(p) : ""}${o.fraud_flag ? '<span class="risk r-high">Fraud flag</span>' : ""}${pill(o.status, o.status_label)}<button class="btn small primary" data-act="open-case" data-id="${o.id}">Open case</button></div></div>`; };
+  return `<section class="intro"><h1>Verification</h1><p class="lede">Evidence that needs a person, highest risk first. Every action needs a reason and is logged.</p>
+    <p class="proto-note">Prototype: provenance, AI-generation and visual findings are simulated. Nothing calls an outside service.</p></section>
+  <section class="sect"><h2>Needs attention</h2>${queue.length ? `<div class="rows">${queue.map(rowOf).join("")}</div>` : `<p class="empty">Nothing waiting. Use the demo buttons in a host's Evidence center to create cases.</p>`}</section>
+  <section class="sect"><h2>Verified recently</h2>${done.length ? `<div class="rows">${done.slice(0, 6).map(rowOf).join("")}</div>` : `<p class="empty">Nothing verified yet.</p>`}</section>
+  <section class="sect"><h2>Audit trail</h2><ul class="hist">${audit.map(a => `<li><span>${esc(a.ts.replace("T", " "))}</span><span>${esc(a.actor)}</span><span>${esc(a.action.replaceAll("_", " "))}${a.order_id ? ` #${a.order_id}` : ""}</span><span class="sub">${esc(a.detail || "")}</span></li>`).join("")}</ul></section>`;
 }
 
 async function platPayouts() {
@@ -718,7 +763,7 @@ async function platFees() {
 
 const VIEWS = {
   sponsor: { find: sponsorFind, deals: sponsorDeals },
-  host: { dinners: hostDinners, sponsors: hostSponsors, inbox: hostInbox },
+  host: { dinners: hostDinners, sponsors: hostSponsors, inbox: hostInbox, evidence: hostEvidence },
   platform: { overview: platOverview, review: platReview, payouts: platPayouts, fees: platFees },
 };
 
@@ -962,15 +1007,58 @@ const ACTIONS = {
         <label class="field"><span>Message</span><textarea id="pr-msg" rows="3">We think ${esc(sp.name)} would suit our guests at ${esc(ev.title)}.</textarea></label>
         <div class="btns"><button type="button" class="btn" data-act="close">Cancel</button><button class="btn primary" type="submit">Send offer</button></div></form>`);
   },
+  async capture(el) {
+    const s = await api(`/api/events/${el.dataset.ev}/capture`, "POST");
+    S.capture = { ev: Number(el.dataset.ev), token: s.token };
+    const cells = Array.from({ length: 81 }, (_, i) => ((i * 7 + s.token.charCodeAt(i % s.token.length)) % 3 === 0) || [0, 1, 9, 10, 7, 8, 16, 17, 63, 64, 72, 73].includes(i));
+    dialog(`<h2>Capture with your phone</h2>
+      <div class="cap"><div class="fakeqr" aria-label="Demo QR code">${cells.map(on => `<i class="${on ? "on" : ""}"></i>`).join("")}</div>
+      <div><p>Scan this at the event, or open Tablematch on your phone. Photos taken in this session are tagged with code <b>${esc(s.token)}</b>, valid for ${s.valid_hours} hours.</p>
+      <p class="sub">Prototype: the QR is a placeholder. On a phone, the button below opens the camera.</p></div></div>
+      <form class="stack" data-form="proof" data-id="${el.dataset.id}">
+        <label class="field"><span>Take a photo or video</span><input type="file" name="files" accept="image/*,video/*" capture="environment" multiple required></label>
+        <input type="hidden" name="capture" value="${esc(s.token)}"><input type="hidden" name="note" value=""><input type="hidden" name="links" value=""><input type="hidden" name="checkins" value="">
+        <label class="check"><input type="checkbox" name="blur" checked> Blur guests' faces for the sponsor</label>
+        <div class="btns"><button type="button" class="btn" data-act="close">Close</button><button class="btn primary" type="submit">Submit capture</button></div></form>`);
+  },
   async sample(el) {
     const fd = new FormData(); fd.append("scenario", el.dataset.s);
     const o = await api(`/api/orders/${el.dataset.id}/proof`, "POST", fd);
     proofToast(o); await render();
   },
   async review(el) {
-    const note = ($(`#rv-${el.dataset.id}`) || {}).value || "";
+    const note = ($("#rv-note") || {}).value || "";
     await api(`/api/orders/${el.dataset.id}/review`, "POST", { decision: el.dataset.d, note });
-    toast(el.dataset.d === "approve" ? "Approved. The payout is ready." : "Sent back to the host for new photos."); await render();
+    closeDialog();
+    toast({ approve: "Approved. The payout is ready for a person to release.", reject: "Rejected. The host can resubmit.",
+      request_evidence: "Asked the host for more evidence.", escalate: "Escalated to a dispute.", flag_fraud: "Flagged as suspected fraud." }[el.dataset.d]);
+    await render();
+  },
+  async "open-case"(el) {
+    const d = await api(`/api/orders/${el.dataset.id}/evidence`);
+    const o = d.order, sub = d.submissions[0];
+    const comp = { provenance: "Provenance and authenticity", vision: "Visual verification" };
+    dialog(`<div class="case"><small class="pid">Submission #${sub ? sub.id : "-"}, placement #${o.id}</small><h2>${esc(o.slot.title)}: ${esc(o.sponsor.name)} at ${esc(o.event.title)}</h2>
+      <p class="sub">${esc(o.club.name)} (${esc(o.club.host_name)}), ${fmtDate(o.event.date)}, ${esc(o.event.neighborhood)}. ${money(o.price)} held in escrow.${o.fraud_flag ? " <b>Flagged as suspected fraud.</b>" : ""}</p>
+      <p class="note"><b>Agreement:</b> ${esc(o.slot.specs)} ${esc(units(o.slot.type, o.event.guests))}. Evidence: ${plural(o.slot.photos_required, "photo")}.</p>
+      ${sub ? `<div class="case-risk"><div><small>Risk score</small><b>${sub.risk_score}</b><span>${riskBadge(sub)}</span></div>
+        <ul>${(sub.risk_parts || []).map(r => `<li><span>${esc(r.label)}</span><b class="num">+${r.points}</b></li>`).join("")}</ul></div>
+        ${(sub.triggers || []).length ? `<p class="note bad"><b>Must review:</b> ${sub.triggers.map(esc).join(". ")}</p>` : ""}
+        <h3>Original files</h3><div class="tablewrap"><table><thead><tr><th>File</th><th>Type</th><th>SHA-256</th><th>Metadata</th><th>Notes</th></tr></thead><tbody>
+        ${sub.files.map(f => `<tr><td><a href="${esc(f.original)}" target="_blank" rel="noopener">${esc(f.name)}</a></td><td>${esc(f.kind)}</td><td><code>${esc(f.sha256.slice(0, 16))}…</code></td>
+          <td>${Object.keys(f.exif || {}).length ? esc(Object.entries(f.exif).map(([k, v]) => k + ": " + v).join(", ")) : "None"}</td><td>${f.blurred ? "Faces blurred for sponsor" : ""}${f.capture_session ? ` Captured in session ${esc(f.capture_session)}` : ""}</td></tr>`).join("")}</tbody></table></div>
+        ${sub.host_note ? `<p class="sub">Host's note: “${esc(sub.host_note)}”</p>` : ""}
+        ${["provenance", "vision"].map(k => `<h3>${comp[k]}</h3><ul class="findings">${sub.findings.filter(f => f.component === k).map(f => `<li class="sev-${esc(f.severity)}"><span>${esc(f.detail)}</span>${f.simulated ? '<em>Simulated</em>' : ""}</li>`).join("")}</ul>`).join("")}` : "<p>No evidence yet.</p>"}
+      <h3>History</h3><ul class="hist">${d.submissions.map(x => `<li><span>${esc(x.created.replace("T", " "))}</span><span>${x.risk_band ? riskBadge(x) : ""}</span><span>${esc(x.decision.replaceAll("_", " "))}</span></li>`).join("")}</ul>
+      <h3>Audit trail</h3><ul class="hist">${d.audit.map(a => `<li><span>${esc(a.ts.replace("T", " "))}</span><span>${esc(a.actor)}</span><span>${esc(a.action.replaceAll("_", " "))}</span><span class="sub">${esc(a.detail || "")}</span></li>`).join("")}</ul>
+      ${["under_review", "in_escrow"].includes(o.status) ? `<label class="field"><span>Reason <span class="hint">Required for everything except approve. Saved in the audit trail.</span></span><textarea id="rv-note" rows="2"></textarea></label>
+      <div class="btns case-acts">${o.status === "under_review" ? `<button class="btn primary" data-act="review" data-id="${o.id}" data-d="approve">Approve</button>` : ""}
+        <button class="btn" data-act="review" data-id="${o.id}" data-d="request_evidence">Request more evidence</button>
+        <button class="btn" data-act="review" data-id="${o.id}" data-d="reject">Reject</button>
+        <button class="btn" data-act="review" data-id="${o.id}" data-d="escalate">Escalate to dispute</button>
+        <button class="btn danger" data-act="review" data-id="${o.id}" data-d="flag_fraud">Flag suspected fraud</button></div>` : `<div class="btns"><button class="btn" data-act="close">Close</button></div>`}
+      <p class="tag-note">AI findings are simulated in this prototype and only inform the decision. Money moves only when a person approves a payout or refund.</p></div>`);
+    $("#dlg").classList.add("wide");
   },
   async payout(el) {
     const p = await api(`/api/orders/${el.dataset.id}/payout-preview`);
@@ -993,9 +1081,9 @@ const ACTIONS = {
 
 function proofToast(o) {
   const p = o.latest_proof;
-  if (p.decision === "verified") toast("Photos verified. Tablematch can now pay you out.");
-  else if (p.decision === "needs_review") toast("Photos passed the quality check and are waiting for a reviewer.");
-  else toast("Photos rejected: " + p.notes, true);
+  if (p.decision === "verified") toast("Evidence verified. Tablematch can now pay you out.");
+  else if (p.decision === "needs_review") toast("Evidence received. A reviewer will check it before any payout.");
+  else toast(p.notes, true);
 }
 
 async function submitSponsorSearch() {
@@ -1058,10 +1146,10 @@ const FORMS = {
   async proof(form) {
     const fd = new FormData();
     [...form.querySelector("input[type=file]").files].forEach(f => fd.append("files", f));
-    fd.append("links", form.querySelector("[name=links]").value);
-    fd.append("checkins", form.querySelector("[name=checkins]").value);
+    for (const k of ["links", "checkins", "note", "capture"]) { const f = form.querySelector(`[name=${k}]`); if (f) fd.append(k, f.value); }
+    const blur = form.querySelector("[name=blur]"); if (blur && blur.checked) fd.append("blur_faces", "1");
     const o = await api(`/api/orders/${form.dataset.id}/proof`, "POST", fd);
-    proofToast(o); await render();
+    closeDialog(); proofToast(o); await render();
   },
   async feedback() {
     const rate = document.querySelector("input[name=rate]:checked");

@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from PIL import Image
 from pydantic import BaseModel
 
-from . import db, matching, payments, seed, verify
+from . import db, evidence, matching, payments, seed, verify
 
 ROOT = db.ROOT
 
@@ -95,6 +95,18 @@ def event_view(ev, with_slots=True):
     return ev
 
 
+def _deadline(day):
+    from datetime import date, timedelta
+    try:
+        return (date.fromisoformat(day) + timedelta(days=3)).isoformat()
+    except ValueError:
+        return day
+
+
+def money_str(x):
+    return f"${x:,.0f}"
+
+
 def _preview(o):
     """Fee for one placement. Inside a package the cap applies to the whole deal, split by price."""
     st = db.get_settings()
@@ -131,6 +143,9 @@ def order_view(o):
                 club={"id": club["id"], "name": club["name"], "host_name": club["host_name"]},
                 sponsor={"id": sp["id"], "name": sp["name"], "color": sp["color"]},
                 proofs=proofs, latest_proof=proofs[0] if proofs else None,
+                files=db.q("SELECT kind, shared, sha256, blurred, uploaded_at FROM evidence_files WHERE proof_id=?",
+                           (proofs[0]["id"],)) if proofs else [],
+                deadline=_deadline(ev["date"]),
                 estimate=est)
 
 
@@ -162,7 +177,8 @@ def meta():
             "clubs": db.q("SELECT * FROM clubs ORDER BY name"),
             "settings": db.get_settings(), "verify_mode": verify.mode(),
             "slot_types": {k: v[0] for k, v in seed.SLOT_TYPES.items()},
-            "categories": seed.CATEGORIES, "formats": seed.FORMATS, "kinds": seed.KINDS, "interests": seed.INTERESTS,
+            "scenarios": {k: v["label"] for k, v in evidence.SCENARIOS.items()},
+            "risk_weights": evidence.RISK_WEIGHTS, "categories": seed.CATEGORIES, "formats": seed.FORMATS, "kinds": seed.KINDS, "interests": seed.INTERESTS,
             "age_groups": seed.AGE_GROUPS, "vibes": list(matching.VIBES), "audiences": list(matching.AUDIENCES),
             "weights": matching.WEIGHTS}
 
@@ -503,6 +519,7 @@ def pay(order_id: int):
         raise HTTPException(409, "This placement is part of a package. Pay for the whole package instead.")
     p = _preview(o)
     db.update("orders", order_id, status="in_escrow", fee=p["fee"], net=p["net"], paid_at=now())
+    evidence.audit("Sponsor", "sponsor", "paid_into_escrow", order_id, money_str(o["price"]))
     ledger(order_id, "charge", o["price"], "Sponsor paid the platform, funds held in escrow")
     return order_view(get_or_404("orders", order_id))
 
@@ -519,39 +536,28 @@ def cancel(order_id: int):
 
 @app.post("/api/orders/{order_id}/proof")
 async def upload_proof(order_id: int, files: List[UploadFile] = File(default=[]), scenario: str = Form(""),
-                       links: str = Form(""), checkins: str = Form("")):
+                       links: str = Form(""), checkins: str = Form(""), note: str = Form(""),
+                       capture: str = Form(""), blur_faces: str = Form("")):
+    """Host submits evidence for one placement. PROTOTYPE: checks are simulated, real uploads always pass."""
     o = _order(order_id, "in_escrow")
     slot = get_or_404("slots", o["slot_id"])
-    ev = get_or_404("events", slot["event_id"])
     sp = get_or_404("sponsors", o["sponsor_id"])
-    settings = db.get_settings()
-
-    raw = []  # (name, bytes, mime)
+    club = db.one("SELECT c.* FROM clubs c JOIN events e ON e.club_id=c.id WHERE e.id=?", (slot["event_id"],))
     if scenario:
-        if scenario not in ("good", "blurry", "wrong_brand"):
+        if evidence.LEGACY.get(scenario, scenario) not in evidence.SCENARIOS:
             raise HTTPException(400, "Unknown sample scenario.")
-        other = "Other Co" if sp["name"] != "Other Co" else "Someone Else"
-        for i in range(slot["photos_required"]):
-            raw.append((f"sample-{scenario}-{i + 1}.png",
-                        verify.sample_image(scenario, slot["type"], sp["name"], other), "image/png"))
+        raw = evidence.sample_files(slot, sp["name"], evidence.LEGACY.get(scenario, scenario), slot["photos_required"])
     else:
+        raw = []
         for f in files:
             data = await f.read()
-            raw.append((f.filename or "photo", data, f.content_type or "image/jpeg"))
+            mime = f.content_type or ""
+            name = f.filename or "file"
+            if not (mime.startswith("image/") or mime.startswith("video/") or name.lower().endswith(evidence.VIDEO_EXT + (".jpg", ".jpeg", ".png", ".heic", ".webp"))):
+                raise HTTPException(400, f"{name} is not a photo or video.")
+            raw.append((name, data, mime))
     if not raw:
-        raise HTTPException(400, "Add at least one photo of the placement.")
-    images = []
-    for name, data, _ in raw:
-        try:
-            im = Image.open(io.BytesIO(data))
-            im.load()
-            images.append(im.convert("RGB"))
-        except Exception:
-            raise HTTPException(400, f"{name} is not an image the demo can read. Use a JPG or PNG.")
-
-    result = verify.verify(images, raw, slot, sp, ev, settings, scenario or None)
-
-    # extra evidence beyond photos: links to posts that tag the brand, and the guest check-in count
+        raise HTTPException(400, "Add at least one photo or video of the placement.")
     link_list = [u.strip() for u in re.split(r"[\s,]+", links or "") if u.strip()]
     bad = [u for u in link_list if not re.match(r"^https?://[^\s/]+\.[^\s]+", u)]
     if bad:
@@ -564,33 +570,8 @@ async def upload_proof(order_id: int, files: List[UploadFile] = File(default=[])
             raise HTTPException(400, "Check-ins must be a number.")
         if n_checkins < 0:
             raise HTTPException(400, "Check-ins cannot be negative.")
-    if link_list:
-        result["checks"].append({"label": f"{len(link_list)} social post link(s) submitted as extra proof", "ok": True})
-    if n_checkins is not None:
-        share = n_checkins / max(ev["guests"], 1)
-        result["checks"].append({"label": f"{n_checkins} of {ev['guests']} expected guests checked in", "ok": share >= 0.5})
-
-    folder = db.UPLOADS / str(order_id)
-    folder.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now().strftime("%H%M%S")
-    urls = []
-    for i, (name, data, _) in enumerate(raw, 1):
-        ext = "png" if name.lower().endswith("png") else "jpg"
-        fp = folder / f"{stamp}-{i}.{ext}"
-        fp.write_bytes(data)
-        urls.append(f"/uploads/{order_id}/{fp.name}")
-
-    db.insert("proofs", order_id=order_id, created=now(), mode=result["mode"], decision=result["decision"],
-              confidence=result["confidence"], checks=result["checks"], notes=result["notes"],
-              photos=urls, ai_cost=result["ai_cost"], reviewer_note="", links=link_list, checkins=n_checkins)
-    if result["ai_cost"]:
-        ledger(order_id, "ai_check", result["ai_cost"], f"Photo check on {len(raw)} photo(s)")
-    if result["decision"] == "verified":
-        db.update("orders", order_id, status="ready_for_payout", note="Placement verified")
-    elif result["decision"] == "needs_review":
-        db.update("orders", order_id, status="under_review", note="Waiting for a platform reviewer")
-    else:
-        db.update("orders", order_id, note="Photos were rejected: " + result["notes"])
+    evidence.run(o, raw, scenario, f"{club['host_name']} ({club['name']})", note=note, links=link_list,
+                 checkins=n_checkins, capture_session=capture or None, blur_faces=blur_faces in ("1", "true", "on"))
     return order_view(get_or_404("orders", order_id))
 
 
@@ -603,6 +584,7 @@ class Signoff(BaseModel):
 def sponsor_signoff(order_id: int, body: Signoff):
     """The sponsor confirms the placement, or disputes it. A dispute pauses the payout and goes to review."""
     o = _order(order_id, "ready_for_payout", "under_review", "released")
+    evidence.audit("Sponsor", "sponsor", "signoff_" + body.decision, order_id, body.note)
     if body.decision == "confirm":
         db.update("orders", order_id, signoff="confirmed")
     elif body.decision == "dispute":
@@ -616,23 +598,67 @@ def sponsor_signoff(order_id: int, body: Signoff):
 
 
 class Review(BaseModel):
-    decision: str  # approve | reject
+    decision: str  # approve | reject | request_evidence | escalate | flag_fraud
     note: str = ""
+    reviewer: str = "Platform reviewer"
 
 
 @app.post("/api/orders/{order_id}/review")
 def review(order_id: int, body: Review):
-    o = _order(order_id, "under_review")
+    """People decide. AI findings only inform this."""
+    o = _order(order_id, "under_review", "in_escrow", "ready_for_payout")
     proof = db.one("SELECT * FROM proofs WHERE order_id=? ORDER BY id DESC", (order_id,))
-    if body.decision == "approve":
+    d, note = body.decision, body.note.strip()
+    if d in ("reject", "flag_fraud", "escalate", "request_evidence") and not note:
+        raise HTTPException(400, "Write down the reason. It goes in the audit trail and to the host.")
+    if d == "approve":
+        if o["status"] != "under_review":
+            raise HTTPException(409, "Only items in review can be approved.")
         db.update("orders", order_id, status="ready_for_payout", note="Approved by a reviewer")
-        db.update("proofs", proof["id"], decision="verified", reviewer_note=body.note or "Approved")
-    elif body.decision == "reject":
-        db.update("orders", order_id, status="in_escrow", note="Reviewer asked for new photos: " + (body.note or ""))
-        db.update("proofs", proof["id"], decision="rejected", reviewer_note=body.note or "Rejected")
+        if proof:
+            db.update("proofs", proof["id"], decision="verified", reviewer_note=note or "Approved",
+                      notes=f"Checked and approved by a reviewer{' after a ' + proof['risk_band'] + '-risk flag' if proof.get('risk_band') in ('medium', 'high') else ''}.")
+    elif d in ("reject", "request_evidence"):
+        db.update("orders", order_id, status="in_escrow",
+                  note=("Evidence rejected: " if d == "reject" else "More evidence requested: ") + note)
+        if proof:
+            db.update("proofs", proof["id"], decision="rejected", reviewer_note=note)
+    elif d == "escalate":
+        db.update("orders", order_id, status="under_review", signoff="disputed", note="Escalated to a dispute: " + note)
+    elif d == "flag_fraud":
+        db.update("orders", order_id, status="under_review", fraud_flag=1, note="Flagged as suspected fraud: " + note)
     else:
-        raise HTTPException(400, "Decision must be approve or reject.")
+        raise HTTPException(400, "Unknown decision.")
+    evidence.audit(body.reviewer, "reviewer", d, order_id, note)
     return order_view(get_or_404("orders", order_id))
+
+
+@app.get("/api/orders/{order_id}/evidence")
+def order_evidence(order_id: int):
+    """Everything a reviewer needs: agreement, every submission with files and findings, audit trail."""
+    o = order_view(get_or_404("orders", order_id))
+    subs = []
+    for p in db.q("SELECT * FROM proofs WHERE order_id=? ORDER BY id DESC", (order_id,)):
+        subs.append(dict(p, files=db.q("SELECT * FROM evidence_files WHERE proof_id=?", (p["id"],)),
+                         findings=db.q("SELECT * FROM findings WHERE proof_id=?", (p["id"],))))
+    return {"order": o, "submissions": subs,
+            "audit": db.q("SELECT * FROM audit_log WHERE order_id=? ORDER BY id DESC", (order_id,))}
+
+
+@app.get("/api/audit")
+def audit_trail(limit: int = 60):
+    return db.q("SELECT * FROM audit_log ORDER BY id DESC LIMIT ?", (limit,))
+
+
+@app.post("/api/events/{event_id}/capture")
+def capture_session(event_id: int):
+    """A short-lived capture code for this event. In the prototype it is only recorded on the files."""
+    get_or_404("events", event_id)
+    import secrets
+    token = secrets.token_hex(3).upper()
+    exp = datetime.now().replace(microsecond=0)
+    db.insert("capture_sessions", token=token, event_id=event_id, created=now(), expires=exp.isoformat())
+    return {"token": token, "event_id": event_id, "valid_hours": 6}
 
 
 @app.get("/api/orders/{order_id}/payout-preview")
@@ -655,6 +681,7 @@ def release(order_id: int, body: Release):
               note="Paid out to host")
     ledger(order_id, "fee", p["fee"], f"Platform fee deducted ({p['rate']:.0%}, cap ${p['cap']:,.0f}" + (" per package" if o.get("deal_id") else "") + ")")
     ledger(order_id, "transfer", p["net"], "Transferred to host")
+    evidence.audit("Platform", "platform", "payout_released", order_id, f"{money_str(p['net'])} to host after {money_str(p['fee'])} fee")
     return order_view(get_or_404("orders", order_id))
 
 
@@ -664,6 +691,7 @@ def refund(order_id: int):
     db.update("orders", order_id, status="refunded", note="Refunded to sponsor")
     db.update("slots", o["slot_id"], status="open")
     ledger(order_id, "refund", o["price"], "Refunded to sponsor")
+    evidence.audit("Platform", "platform", "refunded", order_id, money_str(o["price"]))
     return order_view(get_or_404("orders", order_id))
 
 
@@ -757,6 +785,7 @@ def pay_deal(deal_id: int):
         p = _preview(o)
         db.update("orders", o["id"], status="in_escrow", fee=p["fee"], net=p["net"], paid_at=now())
         ledger(o["id"], "charge", o["price"], f"Part of package payment for deal {deal_id}, held in escrow")
+        evidence.audit("Sponsor", "sponsor", "paid_into_escrow", o["id"], f"Package deal {deal_id}")
     return deal_view(d)
 
 

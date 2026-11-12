@@ -39,12 +39,13 @@ CREATE TABLE IF NOT EXISTS offers (
 CREATE TABLE IF NOT EXISTS orders (
   id INTEGER PRIMARY KEY, slot_id INTEGER, sponsor_id INTEGER, offer_id INTEGER,
   source TEXT, price REAL, fee REAL, net REAL, status TEXT, note TEXT,
-  created TEXT, paid_at TEXT, released_at TEXT, signoff TEXT, deal_id INTEGER
+  created TEXT, paid_at TEXT, released_at TEXT, signoff TEXT, deal_id INTEGER, fraud_flag INTEGER
 );
 CREATE TABLE IF NOT EXISTS proofs (
   id INTEGER PRIMARY KEY, order_id INTEGER, created TEXT, mode TEXT, decision TEXT,
   confidence REAL, checks TEXT, notes TEXT, photos TEXT, ai_cost REAL, reviewer_note TEXT,
-  links TEXT, checkins INTEGER
+  links TEXT, checkins INTEGER, risk_score INTEGER, risk_band TEXT, scenario TEXT, host_note TEXT,
+  triggers TEXT, risk_parts TEXT
 );
 CREATE TABLE IF NOT EXISTS feedback (
   id INTEGER PRIMARY KEY, ts TEXT, role TEXT, rating INTEGER, message TEXT, page TEXT
@@ -57,6 +58,20 @@ CREATE TABLE IF NOT EXISTS deals (
   id INTEGER PRIMARY KEY, sponsor_id INTEGER, event_id INTEGER, package_id INTEGER, name TEXT,
   list_total REAL, discount REAL, price REAL, created TEXT
 );
+CREATE TABLE IF NOT EXISTS evidence_files (
+  id INTEGER PRIMARY KEY, proof_id INTEGER, order_id INTEGER, deal_id INTEGER, event_id INTEGER, kind TEXT,
+  name TEXT, mime TEXT, size INTEGER, sha256 TEXT, original TEXT, shared TEXT, exif TEXT, blurred INTEGER,
+  uploaded_by TEXT, uploaded_at TEXT, capture_session TEXT
+);
+CREATE TABLE IF NOT EXISTS findings (
+  id INTEGER PRIMARY KEY, proof_id INTEGER, component TEXT, code TEXT, severity TEXT, detail TEXT, simulated INTEGER
+);
+CREATE TABLE IF NOT EXISTS capture_sessions (
+  id INTEGER PRIMARY KEY, token TEXT, event_id INTEGER, created TEXT, expires TEXT
+);
+CREATE TABLE IF NOT EXISTS audit_log (
+  id INTEGER PRIMARY KEY, ts TEXT, actor TEXT, role TEXT, action TEXT, order_id INTEGER, detail TEXT
+);
 CREATE TABLE IF NOT EXISTS searches (id INTEGER PRIMARY KEY, ts TEXT, side TEXT, results INTEGER);
 CREATE TABLE IF NOT EXISTS ledger (
   id INTEGER PRIMARY KEY, order_id INTEGER, ts TEXT, kind TEXT, amount REAL, note TEXT
@@ -64,7 +79,7 @@ CREATE TABLE IF NOT EXISTS ledger (
 """
 
 JSON_FIELDS = {"vibes", "audiences", "places", "checks", "photos", "interests", "age_groups", "engagement",
-               "preferred_cats", "excluded_cats", "links", "slot_ids"}
+               "preferred_cats", "excluded_cats", "links", "slot_ids", "exif", "triggers", "risk_parts"}
 
 
 def conn():
@@ -129,8 +144,9 @@ def init():
         add = {"events": ["cover TEXT", "format TEXT", "interests TEXT", "age_group TEXT", "total_cost REAL",
                           "ticket_price REAL", "max_sponsors INTEGER", "preferred_cats TEXT", "excluded_cats TEXT", "kind TEXT", "interested INTEGER",
                    "bundle_discount_pct REAL", "bundle_min INTEGER"],
-               "proofs": ["links TEXT", "checkins INTEGER"],
-               "orders": ["signoff TEXT", "deal_id INTEGER"],
+               "proofs": ["links TEXT", "checkins INTEGER", "risk_score INTEGER", "risk_band TEXT", "scenario TEXT",
+                          "host_note TEXT", "triggers TEXT", "risk_parts TEXT"],
+               "orders": ["signoff TEXT", "deal_id INTEGER", "fraud_flag INTEGER"],
                "sponsors": ["cat TEXT", "interests TEXT", "age_groups TEXT", "engagement TEXT"]}
         for table, defs in add.items():
             cols = [r["name"] for r in c.execute(f"PRAGMA table_info({table})").fetchall()]
@@ -145,7 +161,8 @@ def init():
 def wipe():
     c = conn()
     try:
-        for t in ("settings", "sponsors", "clubs", "events", "slots", "offers", "orders", "proofs", "ledger", "searches", "packages", "deals"):
+        for t in ("settings", "sponsors", "clubs", "events", "slots", "offers", "orders", "proofs", "ledger", "searches", "packages", "deals",
+              "evidence_files", "findings", "capture_sessions", "audit_log"):
             c.execute(f"DROP TABLE IF EXISTS {t}")
         c.commit()
     finally:
