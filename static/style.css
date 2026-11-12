@@ -286,7 +286,7 @@ details summary { cursor: pointer; font-weight: 600; padding: 8px 0; min-height:
 .fbk .sub { color: var(--muted); font-size: .9rem; }
 .reduce-motion *, .reduce-motion *::before, .reduce-motion *::after { animation: none !important; transition: none !important; }
 
-body.in-detail .intro, body.in-detail .pill-search, body.in-detail .examples { display: none; }
+body.in-detail .intro, body.in-detail .pill-search, body.in-detail .examples, body.in-detail #filterbar { display: none; }
 
 @media (max-width: 1100px) { .lgrid { grid-template-columns: repeat(3, 1fr); } .detail { gap: 40px; grid-template-columns: 1fr 320px; } }
 @media (max-width: 860px) {
@@ -351,4 +351,54 @@ body.in-detail .intro, body.in-detail .pill-search, body.in-detail .examples { d
   .who { gap: 6px; min-width: 0; }
   .persona select { max-width: 128px; padding: 0 12px; }
   .top-inner > * { min-width: 0; }
+}
+
+/* action plan: filters, explained scores, funding calculator, density, dashboard */
+.filters { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 16px; }
+.fsel { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--white); border-radius: 999px; padding: 0 6px 0 14px; min-height: 40px; font-size: .8125rem; font-weight: 600; color: var(--muted); }
+.fsel select { border: 0; background: transparent; font-size: .875rem; font-weight: 500; color: var(--ink); min-height: 38px; cursor: pointer; max-width: 170px; }
+.fsel:hover { border-color: var(--forest); }
+.fsel.set { background: var(--sage); border-color: var(--forest); color: var(--forest); }
+.fsel:focus-within { outline: 2px solid var(--forest); outline-offset: 2px; }
+.filter-note { margin-top: 8px; }
+.hidden-note { margin-top: 4px; font-size: .875rem; }
+.why { margin-top: 24px; background: var(--white); border: 1px solid var(--line); border-radius: var(--radius-l); padding: 20px 24px; }
+.why h3 { margin-bottom: 12px; }
+.factors { list-style: none; margin: 0 0 8px; padding: 0; display: grid; gap: 12px; }
+.f-top { display: flex; justify-content: space-between; gap: 16px; font-size: .9375rem; }
+.f-top small { color: var(--muted); font-weight: 500; margin-left: 4px; }
+.f-top b { font-variant-numeric: tabular-nums; font-weight: 700; }
+.bar.thin { height: 6px; margin-top: 6px; }
+.f-note { display: block; color: var(--muted); font-size: .8125rem; margin-top: 4px; }
+.factors li.off { opacity: .55; }
+.why-d { margin-top: 8px; }
+.why-d summary { font-size: .9rem; color: var(--forest); min-height: 36px; }
+.why-d .why { margin-top: 8px; }
+.calc { margin-top: 20px; background: var(--white); border: 1px solid var(--line); border-radius: var(--radius-l); padding: 16px 20px; }
+.calc-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; margin-bottom: 12px; }
+.calc-grid > div { display: grid; gap: 2px; align-content: start; }
+.calc-grid span { color: var(--muted); font-size: .8125rem; font-weight: 600; }
+.calc-grid b { font-size: 1.25rem; font-weight: 700; }
+.calc-grid small { color: var(--muted); font-size: .75rem; }
+.calc-grid .hl b { color: var(--forest); }
+.calc-foot { margin-top: 12px; display: grid; gap: 6px; }
+.density { font-size: .9375rem; }
+.density.warn { background: #fbe3e0; color: #7a2418; border-radius: var(--radius-s); padding: 8px 12px; }
+.kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+.kpi { background: var(--white); border: 1px solid var(--line); border-radius: var(--radius-m); padding: 16px; display: grid; gap: 4px; align-content: start; }
+.kpi small { color: var(--forest); font-size: .75rem; font-weight: 700; }
+.kpi span { font-size: .875rem; color: var(--ink); }
+.kpi b { font-family: var(--serif); font-weight: 400; font-size: 1.75rem; line-height: 1.1; }
+.kpi em { font-style: normal; color: var(--muted); font-size: .8125rem; }
+.fs { border: 0; padding: 0; margin: 0; }
+.fs legend { font-weight: 600; font-size: .8125rem; margin-bottom: 6px; }
+.fs .opts label { min-height: 40px; font-size: .875rem; }
+.dlg h3 { margin-top: 8px; }
+@media (max-width: 1100px) { .kpis { grid-template-columns: repeat(2, 1fr); } .calc-grid { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 700px) {
+  .filters { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; }
+  .filters::-webkit-scrollbar { display: none; }
+  .fsel { flex: none; }
+  .calc-grid { grid-template-columns: 1fr 1fr; }
+  .kpis { grid-template-columns: 1fr; }
 }

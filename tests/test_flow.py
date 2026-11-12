@@ -241,3 +241,66 @@ def test_seeded_dinners_have_bundled_covers():
     evs = c.get("/api/events").json()
     assert all(e["cover"] and e["cover"].startswith("/static/covers/") for e in evs)
     assert c.get(evs[0]["cover"]).status_code == 200
+
+
+# --- action plan: filters, explained scores, funding, exclusivity, capacity, dashboard ---------
+def test_hard_filters_remove_dinners_and_scores_are_explained():
+    fresh()
+    r = c.post("/api/search/events", json={"query": "creatives", "filters": {"borough": "Queens"}}).json()
+    assert r["results"] and all(x["event"]["borough"] == "Queens" for x in r["results"])
+    assert r["hidden"]["filters"] > 0
+    b = r["results"][0]["breakdown"]
+    assert [x["weight"] for x in b] == [30, 20, 15, 15, 10, 10]
+    r = c.post("/api/search/events", json={"query": "", "filters": {"format": "banquet"}}).json()
+    assert [x["event"]["title"] for x in r["results"]] == ["Founders table: the bridge dinner"]
+
+
+def test_funding_calculator_and_profile_update():
+    fresh()
+    ev = event("Green plates, no phones")
+    f = ev["funding"]
+    assert f["ticket_revenue"] == 20 * 75 and f["gap"] == 2000 and f["remaining"] == 2000
+    assert f["recommended"]
+    ev = c.patch(f"/api/events/{ev['id']}", json={"ticket_price": 100, "total_cost": 3500}).json()
+    assert ev["funding"]["gap"] == 1500 and ev["funding_needed"] == 1500
+    assert c.patch(f"/api/events/{ev['id']}", json={"preferred_cats": ["snacks"], "excluded_cats": ["snacks"]}).status_code == 400
+
+
+def test_category_exclusivity_and_excluded_categories():
+    fresh()
+    ev = event("Late noodle night")  # Tidewell (soft drinks) already sponsors it
+    table = slot(ev, "table")
+    leaf = sponsor("Leafline")  # snacks, a different category: allowed
+    tidewell_rival = sponsor("Tidewell")
+    assert c.post(f"/api/slots/{table['id']}/buy", json={"sponsor_id": tidewell_rival["id"]}).status_code == 200  # same sponsor may add slots
+    fresh()
+    ev = event("Sunday supper with the quartet")  # excludes finance apps
+    menu = slot(ev, "menu")
+    r = c.post(f"/api/slots/{menu['id']}/buy", json={"sponsor_id": sponsor("Pocketpal")["id"]})
+    assert r.status_code == 409 and "does not take" in r.json()["detail"]
+    assert c.post(f"/api/slots/{menu['id']}/buy", json={"sponsor_id": leaf["id"]}).status_code == 200
+
+
+def test_one_brand_per_category_and_sponsor_capacity():
+    fresh()
+    ev = event("Test kitchen: fermentation")  # capacity 2
+    c.post(f"/api/slots/{slot(ev, 'menu')['id']}/buy", json={"sponsor_id": sponsor("Sunbrew")["id"]})
+    ev = event("Test kitchen: fermentation")
+    assert "coffee" in ev["density"]["taken_cats"]
+    c.post(f"/api/slots/{slot(ev, 'table')['id']}/buy", json={"sponsor_id": sponsor("Spicewell")["id"]})
+    ev = event("Test kitchen: fermentation")
+    assert ev["density"]["at_capacity"]
+    r = c.post(f"/api/slots/{slot(ev, 'gift')['id']}/buy", json={"sponsor_id": sponsor("Glowlab")["id"]})
+    assert r.status_code == 409 and "limit" in r.json()["detail"]
+    found = c.post("/api/search/events", json={"query": "", "sponsor_id": sponsor("Glowlab")["id"]}).json()
+    assert ev["id"] not in [x["event"]["id"] for x in found["results"]]
+
+
+def test_host_matching_breakdown_and_dashboard():
+    fresh()
+    ev = event("Smoke and stone fruit")
+    r = c.post("/api/search/sponsors", json={"event_id": ev["id"], "guests": 24, "funding_needed": 3200}).json()
+    assert [x["weight"] for x in r["results"][0]["breakdown"]] == [25, 20, 25, 15, 10, 5]
+    assert "Pocketpal" not in [x["sponsor"]["name"] for x in r["results"]]  # finance apps excluded here
+    perf = c.get("/api/overview").json()["performance"]
+    assert perf["searches"] >= 1 and perf["deals"] >= 2 and perf["events"] == 9

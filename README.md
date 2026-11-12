@@ -77,3 +77,18 @@ The interface follows an Airbnb-inspired brief: white canvas, charcoal text, one
 - The 9 demo dinners use illustrative AI-generated photos in static/covers (the dinners are fictional, and the footer says so). Hosts can replace a photo from Host > My dinners > "Change cover photo". New dinners show a neutral placeholder until a photo is added.
 - Match percentages come from the unchanged matching code. The sort control (Best match, Soonest, Lowest price) only reorders the results already returned.
 - Saved hearts are stored in your own browser, not on the server.
+
+## Product action plan, first development cycle
+
+- **Structured sponsor filters:** borough, guests, interests, vibe, format, age group, size and date. Filters are hard rules that remove dinners. The free-text description is a soft preference that ranks what is left.
+- **Structured dinner profiles:** hosts edit format, atmosphere, guests, interests, age group, total cost, ticket price, sponsor capacity, and preferred and excluded categories (Host > My dinners > Edit dinner profile).
+- **Matching in both directions, with new starting weights** (`app/matching.py`, `WEIGHTS`):
+  - Brands ranking dinners: audience 30, interest and lifestyle 20, location 15, vibe and format 15, budget and slot fit 10, engagement opportunity 10.
+  - Hosts ranking brands: brand compatibility 25, audience 20, funding contribution 25, operational feasibility 15, guest experience 10, repeat partnership 5.
+  - Hard constraints (filters, budget, excluded categories, one brand per category, sponsor capacity) apply before scoring.
+- **Explained scores:** every match shows a factor-by-factor breakdown.
+- **Funding calculator:** event cost, ticket revenue, funding gap, sponsor money committed, fee, net to the host, what is still to raise, and which slots would close it.
+- **Sponsorship density:** hosts set a sponsor cap. The platform blocks new sponsors past it, enforces one brand per category, and flags dinners that feel too commercial.
+- **Marketplace performance dashboard** (Platform > Overview): baseline KPIs with no targets set yet.
+
+The weights are starting points to validate with users. They are not tuned results.

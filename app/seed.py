@@ -134,6 +134,46 @@ def backfill_covers():
             db.update("events", ev["id"], cover=cover_for(ev["title"]))
 
 
+# Structured profile data added for the action plan (interests, age groups, category, preferred placements).
+CATEGORIES = {
+    "snacks": "Snacks", "coffee": "Coffee", "spirits": "Spirits and alcohol", "pet": "Pet products",
+    "beverages": "Soft drinks and water", "skincare": "Beauty and skincare", "fintech": "Finance apps",
+    "condiments": "Sauces and condiments",
+}
+FORMATS = {
+    "family-style": "Family-style supper", "tasting": "Seated tasting menu", "music": "Supper with live music",
+    "late-night": "Late-night counter", "cook-off": "Cook-off or competition", "banquet": "Large banquet",
+    "test-kitchen": "Test kitchen", "potluck": "Neighborhood potluck",
+}
+INTERESTS = ["design", "art", "food culture", "music", "wellness", "fitness", "tech", "sustainability",
+             "nightlife", "travel", "fashion", "family"]
+AGE_GROUPS = ["21-29", "30-39", "40-54", "55+"]
+
+SPONSOR_PROFILE = {
+    "Leafline": dict(cat="snacks", interests=["wellness", "fitness", "sustainability"], age_groups=["21-29", "30-39"], engagement=["gift", "table"]),
+    "Sunbrew": dict(cat="coffee", interests=["design", "art", "tech"], age_groups=["21-29", "30-39"], engagement=["drink", "display", "menu"]),
+    "Copperhollow": dict(cat="spirits", interests=["food culture", "music", "travel"], age_groups=["30-39", "40-54"], engagement=["drink", "title", "table"]),
+    "Pawlette": dict(cat="pet", interests=["family", "wellness"], age_groups=["30-39", "40-54"], engagement=["gift", "table"]),
+    "Tidewell": dict(cat="beverages", interests=["fitness", "wellness", "nightlife"], age_groups=["21-29", "30-39"], engagement=["drink", "table"]),
+    "Glowlab": dict(cat="skincare", interests=["fashion", "wellness", "design"], age_groups=["21-29", "30-39", "40-54"], engagement=["gift", "title"]),
+    "Pocketpal": dict(cat="fintech", interests=["tech", "nightlife", "travel"], age_groups=["21-29"], engagement=["display", "menu"]),
+    "Spicewell": dict(cat="condiments", interests=["food culture", "nightlife"], age_groups=["21-29", "30-39"], engagement=["table", "menu", "gift"]),
+}
+# title -> format, interests, age group, ticket price, max sponsors, preferred and excluded categories
+EVENT_PROFILE = {
+    "Smoke and stone fruit": ("tasting", ["food culture", "design", "art"], "21-29", 95, 3, ["coffee", "spirits", "condiments"], ["fintech"]),
+    "The long summer table": ("family-style", ["food culture", "sustainability"], "30-39", 85, 3, ["beverages", "snacks"], []),
+    "Sunday supper with the quartet": ("music", ["music", "food culture", "travel"], "30-39", 120, 2, ["spirits"], ["fintech", "pet"]),
+    "Green plates, no phones": ("tasting", ["wellness", "sustainability", "family"], "30-39", 75, 2, ["snacks", "beverages", "skincare"], ["spirits", "fintech"]),
+    "Late noodle night": ("late-night", ["nightlife", "food culture"], "21-29", 45, 3, ["condiments", "beverages"], ["pet"]),
+    "Chili oil showdown": ("cook-off", ["food culture", "nightlife"], "21-29", 40, 3, ["condiments", "beverages"], []),
+    "Founders table: the bridge dinner": ("banquet", ["tech", "design", "art"], "30-39", 110, 4, ["coffee", "spirits", "fintech"], ["pet"]),
+    "Test kitchen: fermentation": ("test-kitchen", ["food culture", "tech", "sustainability"], "21-29", 90, 2, ["condiments", "coffee"], []),
+    "Around Astoria in five plates": ("potluck", ["food culture", "family", "travel"], "30-39", 35, 3, ["condiments", "beverages", "snacks"], ["spirits"]),
+}
+DATA_VERSION = "2"
+
+
 NOW = lambda: datetime.now().isoformat(timespec="seconds")
 
 
@@ -141,7 +181,7 @@ def seed():
     db.wipe()
     for k, v in db.DEFAULT_SETTINGS.items():
         db.set_setting(k, v)
-    sp_ids = [db.insert("sponsors", **s) for s in SPONSORS]
+    sp_ids = [db.insert("sponsors", **s, **SPONSOR_PROFILE[s["name"]]) for s in SPONSORS]
     club_ids = [db.insert("clubs", **c) for c in CLUBS]
     slot_ids = {}  # (event index, slot type) -> id
     ev_ids = []
@@ -150,13 +190,15 @@ def seed():
         d = (date.today() + timedelta(days=days)).isoformat()
         eid = db.insert("events", club_id=club_ids[ci], title=title, date=d, venue=f"{club['name']} dining room",
                         neighborhood=club["neighborhood"], borough=club["borough"], guests=guests,
-                        funding_needed=need, vibes=vibes, audiences=auds, description=desc, cover=cover_for(title))
+                        funding_needed=need, vibes=vibes, audiences=auds, description=desc, cover=cover_for(title),
+                        **_profile(title, guests, need))
         ev_ids.append(eid)
         for t, price, photos in slots:
             name, specs = SLOT_TYPES[t]
             slot_ids[(i, t)] = db.insert("slots", event_id=eid, type=t, title=name, specs=specs,
                                          price=price, photos_required=photos, status="open")
 
+    db.set_setting("data_version", DATA_VERSION)
     s = db.get_settings()
     sp = {x["name"]: sp_ids[i] for i, x in enumerate(SPONSORS)}
 
@@ -175,6 +217,13 @@ def seed():
     db.insert("offers", slot_id=slot_ids[(0, "display")], sponsor_id=sp["Sunbrew"], from_side="host",
               amount=600, message="Your cold brew would suit this crowd. The screen runs all night.",
               status="pending", created=NOW())
+
+
+def _profile(title, guests, need):
+    fmt, interests, age, ticket, cap, pref, excl = EVENT_PROFILE[title]
+    # total cost is set so that cost minus ticket revenue equals the original funding gap
+    return dict(format=fmt, interests=interests, age_group=age, ticket_price=ticket,
+                total_cost=need + guests * ticket, max_sponsors=cap, preferred_cats=pref, excluded_cats=excl)
 
 
 def _order(slot_id, sponsor_id, price, source, s, status, paid=False, released=False):

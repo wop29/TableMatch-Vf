@@ -23,7 +23,7 @@ const S = {
   sponsorId: store.get("sponsorId", null),
   clubId: store.get("clubId", null),
   tab: store.get("tab", { sponsor: "find", host: "dinners", platform: "overview" }),
-  sf: { query: "", budget: "", slot_type: "" }, sfData: null,
+  sf: { query: "", budget: "", slot_type: "" }, sfData: null, filters: {},
   hf: { event_id: null, guests: "", funding: "", notes: "" }, hfData: null, sort: "match",
   hidden: new Set(),
 };
@@ -180,7 +180,43 @@ async function runSponsorSearch() {
   S.sfData = await api("/api/search/events", "POST", {
     query: S.sf.query, sponsor_id: sponsor().id,
     budget: S.sf.budget === "" ? null : Number(S.sf.budget), slot_type: S.sf.slot_type || null,
+    filters: S.filters,
   });
+}
+const nice = t => String(t || "").replace(/-/g, " ");
+const catName = k => (S.meta.categories || {})[k] || k;
+function breakdownHTML(b, title) {
+  return `<div class="why"><h3>${esc(title || "Why this matches")}</h3><ul class="factors">${b.map(f => `<li class="${f.score === null ? "off" : ""}">
+    <div class="f-top"><span>${esc(f.label)} <small>${f.weight}%</small></span><b>${f.score === null ? "Not used" : f.score + "%"}</b></div>
+    <div class="bar thin"><i style="width:${f.score || 0}%"></i></div>
+    ${f.note ? `<small class="f-note">${esc(f.note)}</small>` : ""}</li>`).join("")}</ul>
+    <p class="tag-note">Factors you did not describe are left out, and the rest are re-weighted.</p></div>`;
+}
+function hiddenNote(h) {
+  if (!h) return "";
+  const bits = [];
+  if (h.filters) bits.push(`${plural(h.filters, "dinner")} outside your filters`);
+  if (h.budget) bits.push(`${h.budget} over budget`);
+  if (h.category) bits.push(`${h.category} already ${h.category === 1 ? "has" : "have"} a brand in your category`);
+  if (h.capacity) bits.push(`${h.capacity} at sponsor capacity`);
+  if (h.excluded) bits.push(`${h.excluded} where the host excludes your category`);
+  return bits.length ? `<p class="read hidden-note">Not shown: ${bits.join(", ")}.</p>` : "";
+}
+function filterBar() {
+  const m = S.meta, f = S.filters;
+  const sel = (key, label, opts) => `<label class="fsel ${f[key] ? "set" : ""}"><span>${label}</span><select data-act-change="filter" data-key="${key}"><option value="">Any</option>${opts.map(([v, t]) => `<option value="${esc(v)}" ${String(f[key] || "") === String(v) ? "selected" : ""}>${esc(t)}</option>`).join("")}</select></label>`;
+  const n = Object.values(f).filter(Boolean).length;
+  return `<div class="filters" role="group" aria-label="Filters">
+    ${sel("borough", "Borough", [["Brooklyn", "Brooklyn"], ["Manhattan", "Manhattan"], ["Queens", "Queens"]])}
+    ${sel("audience", "Guests", m.audiences.map(a => [a, nice(a)]))}
+    ${sel("interest", "Interest", m.interests.map(a => [a, a]))}
+    ${sel("vibe", "Vibe", m.vibes.map(a => [a, nice(a)]))}
+    ${sel("format", "Format", Object.entries(m.formats))}
+    ${sel("age_group", "Age group", m.age_groups.map(a => [a, a]))}
+    ${sel("max_guests", "Size", [["30", "Up to 30 guests"], ["60", "Up to 60 guests"], ["200", "Any size"]])}
+    ${sel("within_days", "When", [["14", "Next 2 weeks"], ["30", "Next 30 days"], ["60", "Next 60 days"]])}
+    ${n ? `<button type="button" class="link-btn" data-act="clear-filters">Clear ${plural(n, "filter")}</button>` : ""}
+  </div><p class="tag-note filter-note">Filters are must-haves and remove dinners. Your description is a preference and ranks what is left.</p>`;
 }
 function parsedLine(p) {
   const bits = [];
@@ -227,8 +263,8 @@ function sponsorResults() {
     const r = d.results.find(x => x.event.id === S.openEv);
     if (r) return eventDetail(r);
   }
-  if (!d.results.length) return `<div class="rhead"><p class="read">${parsedLine(d.parsed)}</p></div><div class="empty"><p>No dinners match just yet. Try broadening your audience or budget.</p><p style="margin-top:12px"><button class="btn primary" data-act="clear-search">Clear filters</button></p></div>`;
-  return `<div class="rhead"><div><p class="read"><b>${plural(d.results.length, "dinner")}</b> found</p><p class="read">${parsedLine(d.parsed)}</p></div>
+  if (!d.results.length) return `<div class="rhead"><div><p class="read">${parsedLine(d.parsed)}</p>${hiddenNote(d.hidden)}</div></div><div class="empty"><p>No dinners match just yet. Try broadening your audience or budget.</p><p style="margin-top:12px"><button class="btn primary" data-act="clear-search">Clear search and filters</button></p></div>`;
+  return `<div class="rhead"><div><p class="read"><b>${plural(d.results.length, "dinner")}</b> found</p><p class="read">${parsedLine(d.parsed)}</p>${hiddenNote(d.hidden)}</div>
     <label class="sort"><span>Sort by</span><select data-act-change="sort" aria-label="Sort dinners"><option value="match" ${S.sort === "match" ? "selected" : ""}>Best match</option><option value="soon" ${S.sort === "soon" ? "selected" : ""}>Soonest</option><option value="price" ${S.sort === "price" ? "selected" : ""}>Lowest price</option></select></label></div>
     <div class="lgrid">${sortedResults(d.results).map(evCard).join("")}</div>`;
 }
@@ -246,6 +282,7 @@ function eventDetail(r) {
       <div class="meta"><span>${fmtDate(ev.date)}</span><span>${ev.guests} guests</span><span>Hosted by ${esc(ev.host_name)}</span></div>
       <p class="desc">${esc(ev.description)}</p>
       <div class="reasons">${r.reasons.map(x => `<span>${esc(x)}</span>`).join("")}</div>
+      ${breakdownHTML(r.breakdown, `Why this matches: ${r.score}%`)}
       <hr class="rule">
       <h2>How payment works</h2>
       <ol class="steps"><li>You pay Tablematch when you buy a slot. The host does not get the money yet.</li>
@@ -264,6 +301,7 @@ function eventDetail(r) {
       <button class="btn primary block" data-act="buy" data-slot="${pick.id}" data-ev="${ev.id}">Buy slot</button>
       <button class="btn block" data-act="bid" data-slot="${pick.id}" data-ev="${ev.id}">Place bid</button>
       <p class="sub center tag-note">Your payment is held until the host proves your placement.</p>
+      <p class="sub center tag-note">${ev.density.sponsors} of ${ev.density.max_sponsors} sponsor spots taken. One brand per category.</p>
     </aside>
   </div>`;
 }
@@ -282,6 +320,7 @@ async function sponsorFind() {
   </form>
   <div class="examples" role="group" aria-label="Suggested searches">
     ${chips.map(t => `<button type="button" class="chip ${S.sf.query === t ? "on" : ""}" aria-pressed="${S.sf.query === t}" data-act="example" data-text="${esc(t)}">${esc(t)}</button>`).join("")}</div>
+  <div id="filterbar">${filterBar()}</div>
   <div id="results">${sponsorResults()}</div>`;
 }
 
@@ -314,14 +353,30 @@ async function sponsorDeals() {
 async function hostDinners() {
   const c = club();
   const events = await api(`/api/events?club_id=${c.id}`);
-  return `<section class="intro"><h1>${esc(c.name)}</h1><p class="lede">List what each dinner can offer sponsors, set your prices, and say how much funding you need. Sponsors find you through matching, and you can reach out to them in Find sponsors.</p>
+  return `<section class="intro"><h1>${esc(c.name)}</h1><p class="lede">Describe each dinner, set what it costs and what sponsors can buy. Tablematch works out the funding gap and keeps the evening from feeling too commercial.</p>
     <p style="margin-top:14px"><button class="btn primary" data-act="new-event">Add a dinner</button></p></section>
   ${events.length ? events.map(ev => {
-    const pctf = ev.funding_needed ? Math.min(100, Math.round(ev.funded / ev.funding_needed * 100)) : 0;
+    const f = ev.funding, d = ev.density;
     return `<article class="event">
-      <div class="ev-head"><div class="ev-top"><div class="thumb">${cover(ev)}</div><div><h2>${esc(ev.title)}</h2><div class="meta"><span>${fmtDate(ev.date)}</span><span>${ev.guests} guests</span><span>${esc(ev.vibes.join(", "))}</span></div>
-        <div class="fund"><div class="line"><span>${money(ev.funded)} funded</span><span>of ${money(ev.funding_needed)} needed</span></div><div class="bar" role="img" aria-label="${pctf} percent funded"><i style="width:${pctf}%"></i></div></div></div></div>
-        <div class="acts"><label class="cover-edit">${ev.cover ? "Change cover photo" : "Add cover photo"}<input type="file" accept="image/*" data-act-change="cover" data-ev="${ev.id}"></label><button class="btn small" data-act="new-slot" data-ev="${ev.id}">Add a slot</button></div></div>
+      <div class="ev-head"><div class="ev-top"><div class="thumb">${cover(ev)}</div><div><h2>${esc(ev.title)}</h2><div class="meta"><span>${fmtDate(ev.date)}</span><span>${ev.guests} guests</span><span>${esc((S.meta.formats || {})[ev.format] || "")}</span>${ev.age_group ? `<span>Ages ${esc(ev.age_group)}</span>` : ""}</div>
+        <p class="sub">${esc([...ev.vibes.map(nice), ...(ev.interests || [])].join(", "))}${(ev.preferred_cats || []).length ? `. Prefers ${esc(ev.preferred_cats.map(catName).join(", ").toLowerCase())}` : ""}${(ev.excluded_cats || []).length ? `. Excludes ${esc(ev.excluded_cats.map(catName).join(", ").toLowerCase())}` : ""}.</p></div></div>
+        <div class="acts"><button class="btn small" data-act="edit-event" data-ev="${ev.id}">Edit dinner profile</button><label class="cover-edit">${ev.cover ? "Change cover photo" : "Add cover photo"}<input type="file" accept="image/*" data-act-change="cover" data-ev="${ev.id}"></label><button class="btn small" data-act="new-slot" data-ev="${ev.id}">Add a slot</button></div></div>
+      <div class="calc">
+        <div class="calc-grid" aria-label="Funding calculator">
+          <div><span>Event cost</span><b class="num">${money(f.total_cost)}</b></div>
+          <div><span>Ticket revenue</span><b class="num">${money(f.ticket_revenue)}</b><small>${ev.guests} × ${money(f.ticket_price)}</small></div>
+          <div><span>Funding gap</span><b class="num">${money(f.gap)}</b></div>
+          <div><span>Sponsors committed</span><b class="num">${money(f.gross)}</b><small>${money(f.net)} to you after ${money(f.fee)} fee</small></div>
+          <div class="hl"><span>Still to raise</span><b class="num">${money(f.remaining)}</b><small>${f.pct}% of the gap covered</small></div>
+        </div>
+        <div class="bar" role="img" aria-label="${f.pct} percent of the funding gap covered"><i style="width:${f.pct}%"></i></div>
+        <div class="calc-foot">
+          <p class="density ${d.flag ? "warn" : ""}"><b>Sponsorship density: ${esc(d.level)}.</b> ${d.sponsors} of ${d.max_sponsors} sponsor spots used, ${plural(d.placements, "placement")}${d.flag ? ". This may feel too commercial for guests. Consider lowering placements." : "."}</p>
+          ${f.remaining > 0 && f.recommended.length ? (f.recommended_net >= f.remaining
+            ? `<p class="sub">To close the gap, sell: ${f.recommended.map(r => `${esc(r.title)} (${money(r.price)})`).join(", ")}. That brings in about ${money(f.recommended_net)} after fees.</p>`
+            : `<p class="sub">Best you can do with open slots and sponsor spots: ${f.recommended.map(r => `${esc(r.title)} (${money(r.price)})`).join(", ")}, about ${money(f.recommended_net)} after fees. That still leaves ${money(f.remaining - f.recommended_net)} to raise, so consider higher prices, another slot, a higher ticket price or more sponsor spots.</p>`) : f.remaining > 0 ? `<p class="sub">${d.at_capacity ? "Sponsor capacity is reached. Raise it in the dinner profile or adjust ticket prices." : "Add slots or raise prices to close the gap."}</p>` : `<p class="sub">The funding gap is covered.</p>`}
+        </div>
+      </div>
       <div class="tablewrap" style="margin-top:14px"><table><thead><tr><th>Slot</th><th>What the sponsor gets</th><th class="r">Price</th><th>Status</th><th></th></tr></thead><tbody>
       ${ev.slots.filter(s => !S.hidden.has(s.id)).map(s => `<tr><td><b>${esc(s.title)}</b></td><td>${esc(s.specs)}</td>
         <td class="r">${s.status === "open" ? `<input type="number" min="1" step="50" value="${s.price}" aria-label="Price for ${esc(s.title)}" data-act-change="price" data-slot="${s.id}">` : `<span class="num">${money(s.price)}</span>`}</td>
@@ -335,7 +390,7 @@ async function hostSponsors() {
   const c = club();
   const events = (await api(`/api/events?club_id=${c.id}`));
   if (!events.length) return `<section class="intro"><h1>Find sponsors</h1></section><div class="empty"><p>Add a dinner first, then come back to find sponsors for it.</p><p style="margin-top:12px"><button class="btn primary" data-act="goto" data-role="host" data-tab="dinners">Go to My dinners</button></p></div>`;
-  if (!events.some(e => e.id === S.hf.event_id)) { const e = events[0]; S.hf = { event_id: e.id, guests: e.guests, funding: e.funding_needed, notes: "" }; S.hfData = null; }
+  if (!events.some(e => e.id === S.hf.event_id)) { const e = events[0]; S.hf = { event_id: e.id, guests: e.guests, funding: e.funding.remaining, notes: "" }; S.hfData = null; }
   return `<section class="intro"><h1>Find brands that make your next dinner possible</h1><p class="lede">Tell us the guest count and how much funding you need. We match you with brands from the demo list whose audience and budget fit your table.</p></section>
   <form class="finder host" data-form="host-search">
     <label class="field"><span>Dinner</span><select id="hf-e">${events.map(e => `<option value="${e.id}" ${e.id === S.hf.event_id ? "selected" : ""}>${esc(e.title)}, ${fmtDate(e.date)}</option>`).join("")}</select></label>
@@ -353,15 +408,19 @@ function hostResults(events) {
   const ev = (events || []).find(e => e.id === S.hf.event_id);
   const pk = d.package;
   const pctc = pk.needed ? Math.min(100, Math.round(pk.covered / pk.needed * 100)) : 0;
-  return `<div class="pkg"><b>The best matches could cover ${money(pk.covered)} of your ${money(pk.needed)}.</b>
+  const h = d.hidden || {};
+  const hid = [h.excluded ? `${plural(h.excluded, "brand")} in categories you exclude` : "", h.category ? `${h.category} in a category already taken at this dinner` : ""].filter(Boolean);
+  return `<div class="pkg"><b>The best matches could cover ${money(pk.covered)} of the ${money(pk.needed)} still to raise.</b>${pk.room < 4 ? ` <span class="sub">You have room for ${plural(pk.room, "more sponsor")}.</span>` : ""}
     <div class="bar" style="max-width:420px"><i style="width:${pctc}%"></i></div>
-    <p class="sub" style="margin-top:6px">${pk.items.length ? pk.items.map(i => `${esc(i.sponsor)} for ${esc(i.slot)} (${money(i.price)})`).join(", ") : "No open slots to suggest. Add slots to the dinner first."}</p></div>
+    <p class="sub" style="margin-top:6px">${pk.items.length ? pk.items.map(i => `${esc(i.sponsor)} for ${esc(i.slot)} (${money(i.price)})`).join(", ") : "No open slots to suggest. Add slots or raise sponsor capacity first."}</p>
+    ${hid.length ? `<p class="sub" style="margin-top:6px">Not shown: ${hid.join(", ")}.</p>` : ""}</div>
   <div class="rows">${d.results.map(r => {
     const sp = r.sponsor, sl = r.suggested_slot;
     return `<div class="row"><div>
       <h3>${esc(sp.name)} <span class="sub" style="font-weight:400">${esc(sp.category)}</span></h3>
       <p class="sub">${esc(sp.blurb)}</p>
-      <div class="reasons">${r.reasons.map(x => `<span>${esc(x)}</span>`).join("")}</div></div>
+      <div class="reasons">${r.reasons.map(x => `<span>${esc(x)}</span>`).join("")}</div>
+      <details class="why-d"><summary>Score breakdown</summary>${breakdownHTML(r.breakdown, "How this score is built")}</details></div>
       <div class="side"><div class="match" style="text-align:left"><b>${matchWord(r.score)}, ${r.score}%</b><div class="bar" role="img" aria-label="${r.score} percent match"><i style="width:${r.score}%"></i></div></div>
       ${sl ? `<button class="btn primary small" data-act="propose" data-sp="${sp.id}" data-slot="${sl.id}">Offer ${esc(sl.title)} for ${money(sl.price)}</button>` : `<span class="sub">No open slot within their budget</span>`}</div></div>`;
   }).join("")}</div>`;
@@ -407,6 +466,7 @@ async function platOverview() {
     <div><dt>Paid out to hosts</dt><dd class="num">${money(ov.paid_out)}</dd></div>
     <div><dt>Photo checks</dt><dd class="num">${money(ov.ai_cost)}</dd><small>${plural(ov.photos_checked, "photo")} checked</small></div>
   </dl>
+  ${perfHTML(ov.performance)}
   <section class="sect"><h2>All deals</h2>${orders.length ? `<div class="tablewrap"><table><thead><tr><th>Dinner</th><th>Slot</th><th>Sponsor</th><th>Host</th><th class="r">Price</th><th>Status</th><th></th></tr></thead><tbody>
     ${orders.map(o => `<tr><td>${esc(o.event.title)}</td><td>${esc(o.slot.title)}</td><td>${esc(o.sponsor.name)}</td><td>${esc(o.club.name)}</td><td class="r num">${money(o.price)}</td><td>${pill(o.status, o.status_label)}</td>
       <td class="r">${["in_escrow", "under_review", "ready_for_payout"].includes(o.status) ? `<button class="btn small danger" data-act="refund" data-id="${o.id}">Refund sponsor</button>` : ""}</td></tr>`).join("")}</tbody></table></div>` : `<p class="empty">No deals yet.</p>`}</section>
@@ -414,6 +474,22 @@ async function platOverview() {
     ${ov.ledger.map(l => `<tr><td>${esc(l.ts.replace("T", " "))}</td><td>#${l.order_id}</td><td>${esc(l.note)}</td><td class="r num">${money(l.amount)}</td></tr>`).join("")}</tbody></table></div></details></section>
   <section class="sect"><details><summary>Feedback from testers (${fb.length})</summary>${fb.length ? fb.map(f => `<div class="fbk"><b>${f.rating} of 5</b> <span class="sub">${esc(f.role || "visitor")} on ${esc(f.page || "unknown page")}, ${esc(f.ts.replace("T", " "))}</span>${f.message ? `<p>${esc(f.message)}</p>` : ""}</div>`).join("") : `<p class="empty">No feedback yet. Ask testers to use Give feedback in the footer.</p>`}</details></section>
   <p class="sub" style="margin-top:20px;color:var(--muted)">Verification mode: ${S.meta.verify_mode === "claude" ? "AI reads the photos with Claude." : "demo checks (set ANTHROPIC_API_KEY to let AI read the photos)."} Fee: ${Math.round(s.fee_rate * 1000) / 10}%, capped at ${money(s.fee_cap)}.</p>`;
+}
+
+function perfHTML(p) {
+  const v = x => x === null || x === undefined ? "No data yet" : x + "%";
+  const tiles = [
+    ["Match quality", "Offers accepted", v(p.match_to_deal), `${p.offers} offers so far`],
+    ["Sponsor acquisition", "Search to booking", v(p.search_to_booking), `${p.deals} deals from ${p.searches} searches`],
+    ["Host monetization", "Average sponsorship per funded dinner", money(p.avg_revenue_per_event), "Gross, before fees"],
+    ["Funding", "Average funding gap covered", p.avg_gap_covered + "%", `Across ${p.events} dinners`],
+    ["Liquidity", "Dinners with offers or deals", v(p.liquidity), "Listings getting relevant interest"],
+    ["Trust", "Verified placement rate", v(p.verification_rate), "Of paid deals with photos submitted"],
+    ["Retention", "Repeat sponsor rate", v(p.repeat_rate), "Sponsors with more than one deal"],
+    ["Guest experience", "Guest satisfaction", "Not collected yet", p.heavy_events.length ? `${p.heavy_events.length} dinners flagged as too commercial` : "No dinners flagged as too commercial"],
+  ];
+  return `<section class="sect"><h2>Marketplace performance</h2><p class="lede" style="margin-bottom:16px">A baseline from activity in this demo. No targets are set yet: the pilot should establish them.</p>
+    <div class="kpis">${tiles.map(([o, k, val, n]) => `<div class="kpi"><small>${esc(o)}</small><span>${esc(k)}</span><b class="num">${esc(val)}</b><em>${esc(n)}</em></div>`).join("")}</div></section>`;
 }
 
 async function platReview() {
@@ -446,6 +522,8 @@ async function platFees() {
   <section class="sect"><h2>What the fee looks like</h2>
     <div class="tablewrap"><table><thead><tr><th class="r">Slot price</th><th class="r">Fee</th><th class="r">Host receives</th><th>Note</th></tr></thead><tbody>
     ${prev.map(p => `<tr><td class="r num">${money(p.price)}</td><td class="r num">${money(p.fee)}</td><td class="r num">${money(p.net)}</td><td>${p.capped ? `Cap applied, ${Math.round(p.rate * 1000) / 10}% would be ${money(Math.round(p.price * p.rate * 100) / 100)}` : ""}</td></tr>`).join("")}</tbody></table></div></section>
+  <section class="sect"><h2>Matching weights</h2><p class="lede" style="margin-bottom:12px">Starting weights to test with users. Hard rules (filters, budget ceilings, excluded categories, one brand per category, sponsor capacity) apply before any scoring.</p>
+    <div class="two">${[["sponsor", "Brands ranking dinners"], ["host", "Hosts ranking brands"]].map(([k, t]) => `<div><h3 style="margin-bottom:8px">${t}</h3><table><tbody>${S.meta.weights[k].map(([, l, w]) => `<tr><td>${esc(l)}</td><td class="r num">${w}%</td></tr>`).join("")}</tbody></table></div>`).join("")}</div></section>
   <section class="sect"><h2>What a photo check costs</h2><p class="lede">Checks are priced per photo, not per deal. A ${money(300)} menu mention and a ${money(12000)} title sponsorship that each need one photo cost the same to verify: about ${money(s.ai_cost_per_photo)} at this setting.</p></section>`;
 }
 
@@ -472,6 +550,30 @@ const ACTIONS = {
     store.set("fav", [...FAVS]);
     el.setAttribute("aria-pressed", FAVS.has(id));
     toast(FAVS.has(id) ? "Saved to this browser." : "Removed from saved.");
+  },
+  async "clear-filters"() { S.filters = {}; S.openEv = null; await runSponsorSearch(); await render(); },
+  async "edit-event"(el) {
+    const ev = (await api(`/api/events?club_id=${club().id}`)).find(e => e.id === Number(el.dataset.ev));
+    const m = S.meta;
+    const checks = (name, opts, chosen) => `<div class="opts">${opts.map(([v, t]) => `<label><input type="checkbox" name="${name}" value="${esc(v)}" ${(chosen || []).includes(v) ? "checked" : ""}>${esc(t)}</label>`).join("")}</div>`;
+    const cats = Object.entries(m.categories);
+    dialog(`<h2>Dinner profile</h2><form class="stack" data-form="edit-event" data-ev="${ev.id}">
+      <label class="field"><span>Title</span><input id="ee-t" value="${esc(ev.title)}" required></label>
+      <div class="two"><label class="field"><span>Date</span><input id="ee-d" type="date" value="${esc(ev.date)}" required></label>
+      <label class="field"><span>Guests</span><input id="ee-g" type="number" min="1" value="${ev.guests}" required></label></div>
+      <div class="two"><label class="field"><span>Format</span><select id="ee-f">${Object.entries(m.formats).map(([k, v]) => `<option value="${k}" ${ev.format === k ? "selected" : ""}>${esc(v)}</option>`).join("")}</select></label>
+      <label class="field"><span>Main age group</span><select id="ee-a"><option value="">Mixed</option>${m.age_groups.map(a => `<option ${ev.age_group === a ? "selected" : ""}>${a}</option>`).join("")}</select></label></div>
+      <fieldset class="field fs"><legend>Atmosphere</legend>${checks("vibes", m.vibes.map(v => [v, nice(v)]), ev.vibes)}</fieldset>
+      <fieldset class="field fs"><legend>Who comes</legend>${checks("audiences", m.audiences.map(v => [v, nice(v)]), ev.audiences)}</fieldset>
+      <fieldset class="field fs"><legend>Guest interests</legend>${checks("interests", m.interests.map(v => [v, v]), ev.interests)}</fieldset>
+      <h3>Costs</h3>
+      <div class="two"><label class="field"><span>Total event cost ($)</span><input id="ee-c" type="number" min="0" step="50" value="${ev.funding.total_cost ?? 0}" required></label>
+      <label class="field"><span>Ticket price per guest ($)</span><input id="ee-p" type="number" min="0" step="5" value="${ev.ticket_price ?? 0}" required></label></div>
+      <h3>Sponsors</h3>
+      <label class="field"><span>Most sponsors at this dinner <span class="hint">Keeps the evening from feeling too commercial</span></span><input id="ee-m" type="number" min="1" max="10" value="${ev.density.max_sponsors}" required></label>
+      <fieldset class="field fs"><legend>Categories you would welcome</legend>${checks("pref", cats, ev.preferred_cats)}</fieldset>
+      <fieldset class="field fs"><legend>Categories you do not want</legend>${checks("excl", cats, ev.excluded_cats)}</fieldset>
+      <div class="btns"><button type="button" class="btn" data-act="close">Cancel</button><button class="btn primary" type="submit">Save profile</button></div></form>`);
   },
   async back() { S.openEv = null; $("#results").innerHTML = sponsorResults(); },
   async example(el) { S.openEv = null; S.sf.query = el.dataset.text; $("#sf-q").value = el.dataset.text; $("#sf-b").value = ""; S.sf.budget = ""; await submitSponsorSearch(); },
@@ -519,7 +621,9 @@ const ACTIONS = {
       <label class="field"><span>Dinner title</span><input id="ne-t" required></label>
       <div class="two"><label class="field"><span>Date</span><input id="ne-d" type="date" required></label>
       <label class="field"><span>Guests</span><input id="ne-g" type="number" min="1" value="24" required></label></div>
-      <label class="field"><span>Funding needed ($)</span><input id="ne-f" type="number" min="0" step="50" value="2500" required></label>
+      <div class="two"><label class="field"><span>Total event cost ($)</span><input id="ne-c" type="number" min="0" step="50" value="4000" required></label>
+      <label class="field"><span>Ticket price per guest ($)</span><input id="ne-p" type="number" min="0" step="5" value="60" required></label></div>
+      <p class="sub">The funding gap is the cost minus ticket revenue. You can add audience, format and sponsor preferences after.</p>
       <label class="field"><span>What the dinner is like</span><textarea id="ne-x" rows="2" placeholder="One or two sentences for sponsors"></textarea></label>
       <p class="sub">Vibe and guest tags start from ${esc(c.name)}'s profile.</p>
       <div class="btns"><button type="button" class="btn" data-act="close">Cancel</button><button class="btn primary" type="submit">Add dinner</button></div></form>`);
@@ -548,7 +652,7 @@ const ACTIONS = {
     }, 6000);
   },
   async goto(el) { S.role = el.dataset.role; S.tab[S.role] = el.dataset.tab; store.set("role", S.role); store.set("tab", S.tab); await render(); },
-  async "clear-search"() { S.sf = { query: "", budget: "", slot_type: "" }; S.openEv = null; S.sfData = null; await render(); },
+  async "clear-search"() { S.sf = { query: "", budget: "", slot_type: "" }; S.filters = {}; S.openEv = null; S.sfData = null; await render(); },
   async "match-info"() {
     dialog(`<h2>How matching works</h2><div class="how"><p>Each dinner and sponsor in this demo list is tagged with vibes, guest types and a neighborhood. We compare your brief with those tags.</p>
       <ul class="steps"><li>Sponsors searching dinners: vibe 40%, guests 30%, location 20%, budget 10%.</li><li>Hosts searching sponsors: vibe 30%, guests 25%, location 15%, guest count 10%, budget 20%.</li></ul>
@@ -646,8 +750,18 @@ const FORMS = {
     closeDialog(); toast("Bid placed. You will see the answer in My deals."); S.sfData = null; S.openEv = null; S.tab.sponsor = "deals"; await render();
   },
   async "new-event"() {
-    await api(`/api/clubs/${club().id}/events`, "POST", { title: $("#ne-t").value, date: $("#ne-d").value, guests: Number($("#ne-g").value), funding_needed: Number($("#ne-f").value), description: $("#ne-x").value });
+    await api(`/api/clubs/${club().id}/events`, "POST", { title: $("#ne-t").value, date: $("#ne-d").value, guests: Number($("#ne-g").value), total_cost: Number($("#ne-c").value), ticket_price: Number($("#ne-p").value), description: $("#ne-x").value });
     closeDialog(); toast("Dinner added. Now add slots for sponsors."); await render();
+  },
+  async "edit-event"(form) {
+    const vals = n => [...form.querySelectorAll(`input[name=${n}]:checked`)].map(i => i.value);
+    await api(`/api/events/${form.dataset.ev}`, "PATCH", {
+      title: $("#ee-t").value, date: $("#ee-d").value, guests: Number($("#ee-g").value), format: $("#ee-f").value,
+      age_group: $("#ee-a").value, vibes: vals("vibes"), audiences: vals("audiences"), interests: vals("interests"),
+      total_cost: Number($("#ee-c").value), ticket_price: Number($("#ee-p").value), max_sponsors: Number($("#ee-m").value),
+      preferred_cats: vals("pref"), excluded_cats: vals("excl"),
+    });
+    closeDialog(); toast("Dinner profile saved. Matching and the funding gap are updated."); S.hfData = null; S.sfData = null; await render();
   },
   async "new-slot"(form) {
     await api(`/api/events/${form.dataset.ev}/slots`, "POST", { type: $("#ns-t").value, price: Number($("#ns-p").value), photos_required: Number($("#ns-n").value), specs: $("#ns-s").value || null });
@@ -704,6 +818,11 @@ document.addEventListener("change", async e => {
     PREFS.text = Number(el.value); store.set("text", PREFS.text); applyPrefs();
   } else if (el.dataset.actChange === "still") {
     PREFS.still = el.checked; store.set("still", PREFS.still); applyPrefs();
+  } else if (el.dataset.actChange === "filter") {
+    S.filters[el.dataset.key] = el.value; S.openEv = null;
+    try { await runSponsorSearch(); } catch (err) { toast(err.message, true); }
+    const fb = $("#filterbar"); if (fb) fb.innerHTML = filterBar();
+    $("#results").innerHTML = sponsorResults();
   } else if (el.dataset.actChange === "sort") {
     S.sort = el.value; $("#results").innerHTML = sponsorResults();
   } else if (el.dataset.actChange === "cover") {

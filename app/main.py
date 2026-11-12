@@ -18,8 +18,8 @@ ROOT = db.ROOT
 @asynccontextmanager
 async def lifespan(_app):
     db.init()
-    if not db.q("SELECT 1 FROM sponsors LIMIT 1"):
-        seed.seed()
+    if not db.q("SELECT 1 FROM sponsors LIMIT 1") or str(db.get_settings().get("data_version")) not in (seed.DATA_VERSION, seed.DATA_VERSION + ".0"):
+        seed.seed()  # demo data only: older demo databases are rebuilt with the new profile fields
     seed.backfill_covers()
     yield
 
@@ -40,13 +40,52 @@ def event_view(ev, with_slots=True):
     club = db.one("SELECT * FROM clubs WHERE id=?", (ev["club_id"],))
     ev = dict(ev, club_name=club["name"], host_name=club["host_name"])
     slots = db.q("SELECT * FROM slots WHERE event_id=? ORDER BY price", (ev["id"],))
-    committed = 0.0
+    st = db.get_settings()
+    gross = net = fee = 0.0
+    sponsor_ids, cats, placements = [], [], 0
     for s in slots:
         o = db.one("SELECT * FROM orders WHERE slot_id=? AND status NOT IN ('refunded') ORDER BY id DESC", (s["id"],))
         s["order_status"] = o["status"] if o else None
-        if o and o["status"] in payments.HELD + ("released",):
-            committed += o["price"]
-    ev["funded"] = committed
+        if not o:
+            continue
+        placements += 1
+        if o["sponsor_id"] not in sponsor_ids:
+            sponsor_ids.append(o["sponsor_id"])
+            sp = db.one("SELECT cat FROM sponsors WHERE id=?", (o["sponsor_id"],))
+            if sp and sp["cat"]:
+                cats.append(sp["cat"])
+        if o["status"] in payments.HELD + ("released",):
+            gross += o["price"]
+            f, n, _ = payments.compute_fee(o["price"], st["fee_rate"], st["fee_cap"])
+            fee += o["fee"] if o["fee"] is not None else f
+            net += o["net"] if o["net"] is not None else n
+    ev["funded"] = gross
+
+    # funding calculator: cost minus ticket revenue is the gap sponsors are asked to close
+    ticket_rev = (ev.get("ticket_price") or 0) * ev["guests"]
+    total = ev.get("total_cost")
+    gap = max(0.0, total - ticket_rev) if total is not None else (ev["funding_needed"] or 0)
+    remaining = max(0.0, gap - net)
+    cap = ev.get("max_sponsors") or 3
+    room = max(0, cap - len(sponsor_ids))
+    rec, acc = [], 0.0
+    for s in sorted([x for x in slots if x["status"] == "open"], key=lambda x: -x["price"]):
+        if acc >= remaining or len(rec) >= room:
+            break
+        rec.append({"id": s["id"], "title": s["title"], "price": s["price"]})
+        acc += payments.compute_fee(s["price"], st["fee_rate"], st["fee_cap"])[1]
+    ev["funding"] = {"total_cost": total, "ticket_price": ev.get("ticket_price"), "ticket_revenue": ticket_rev,
+                     "gap": gap, "gross": gross, "fee": fee, "net": net, "remaining": remaining,
+                     "pct": round(min(1.0, net / gap) * 100) if gap else 100,
+                     "recommended": rec, "recommended_net": acc}
+
+    # sponsorship density: how commercial does the evening feel?
+    per10 = placements / max(ev["guests"], 1) * 10
+    level = "None yet" if not placements else ("Heavy" if (len(sponsor_ids) > cap or per10 > 1.5) else
+                                              "Balanced" if len(sponsor_ids) >= max(1, cap - 1) else "Light")
+    ev["density"] = {"sponsor_ids": sponsor_ids, "sponsors": len(sponsor_ids), "placements": placements,
+                     "max_sponsors": cap, "at_capacity": len(sponsor_ids) >= cap, "taken_cats": cats,
+                     "per_10_guests": round(per10, 2), "level": level, "flag": level == "Heavy"}
     if with_slots:
         ev["slots"] = slots
     return ev
@@ -95,7 +134,10 @@ def meta():
     return {"sponsors": db.q("SELECT * FROM sponsors ORDER BY name"),
             "clubs": db.q("SELECT * FROM clubs ORDER BY name"),
             "settings": db.get_settings(), "verify_mode": verify.mode(),
-            "slot_types": {k: v[0] for k, v in seed.SLOT_TYPES.items()}}
+            "slot_types": {k: v[0] for k, v in seed.SLOT_TYPES.items()},
+            "categories": seed.CATEGORIES, "formats": seed.FORMATS, "interests": seed.INTERESTS,
+            "age_groups": seed.AGE_GROUPS, "vibes": list(matching.VIBES), "audiences": list(matching.AUDIENCES),
+            "weights": matching.WEIGHTS}
 
 
 @app.get("/api/events")
@@ -115,14 +157,18 @@ class SponsorSearch(BaseModel):
     sponsor_id: Optional[int] = None
     budget: Optional[float] = None
     slot_type: Optional[str] = None
+    filters: dict = {}
 
 
 @app.post("/api/search/events")
 def search_events(body: SponsorSearch):
     sponsor = db.one("SELECT * FROM sponsors WHERE id=?", (body.sponsor_id,)) if body.sponsor_id else None
     events = [event_view(r) for r in db.q("SELECT * FROM events ORDER BY date")]
-    results, parsed = matching.rank_events(events, body.query, sponsor, body.budget, body.slot_type or None)
-    return {"parsed": parsed, "results": results}
+    filters = {k: v for k, v in (body.filters or {}).items() if v not in (None, "")}
+    results, parsed, hidden = matching.rank_events(events, body.query, sponsor, body.budget,
+                                                   body.slot_type or None, filters)
+    db.insert("searches", ts=now(), side="sponsor", results=len(results))
+    return {"parsed": parsed, "results": results, "hidden": hidden, "filters": filters}
 
 
 class HostSearch(BaseModel):
@@ -137,8 +183,18 @@ def search_sponsors(body: HostSearch):
     ev = event_view(get_or_404("events", body.event_id))
     club = get_or_404("clubs", ev["club_id"])
     sponsors = db.q("SELECT * FROM sponsors")
-    results, package = matching.rank_sponsors(sponsors, ev, club, body.guests, body.funding_needed, body.notes)
-    return {"results": results, "package": package}
+    history = {}
+    for o in db.q("SELECT * FROM orders WHERE status != 'refunded'"):
+        slot = db.one("SELECT event_id FROM slots WHERE id=?", (o["slot_id"],))
+        e = db.one("SELECT club_id FROM events WHERE id=?", (slot["event_id"],)) if slot else None
+        if e and e["club_id"] == ev["club_id"] and slot["event_id"] != ev["id"]:
+            history[o["sponsor_id"]] = "club"
+        else:
+            history.setdefault(o["sponsor_id"], "platform")
+    results, package, hidden = matching.rank_sponsors(sponsors, ev, club, body.guests, body.funding_needed,
+                                                      body.notes, history)
+    db.insert("searches", ts=now(), side="host", results=len(results))
+    return {"results": results, "package": package, "hidden": hidden}
 
 
 # ------------------------------------------------------------------ host: dinners and slots
@@ -146,7 +202,9 @@ class NewEvent(BaseModel):
     title: str
     date: str
     guests: int
-    funding_needed: float
+    funding_needed: Optional[float] = None
+    total_cost: Optional[float] = None
+    ticket_price: Optional[float] = None
     vibes: List[str] = []
     audiences: List[str] = []
     description: str = ""
@@ -155,13 +213,55 @@ class NewEvent(BaseModel):
 @app.post("/api/clubs/{club_id}/events")
 def create_event(club_id: int, body: NewEvent):
     club = get_or_404("clubs", club_id)
-    if body.guests < 1 or body.funding_needed < 0:
-        raise HTTPException(400, "Guests must be at least 1 and funding cannot be negative.")
+    ticket = body.ticket_price or 0
+    total = body.total_cost if body.total_cost is not None else ((body.funding_needed or 0) + body.guests * ticket)
+    if body.guests < 1 or total < 0 or ticket < 0:
+        raise HTTPException(400, "Guests must be at least 1, and costs and ticket prices cannot be negative.")
+    gap = max(0.0, total - body.guests * ticket)
     eid = db.insert("events", club_id=club_id, title=body.title, date=body.date, venue=f"{club['name']} dining room",
                     neighborhood=club["neighborhood"], borough=club["borough"], guests=body.guests,
-                    funding_needed=body.funding_needed, vibes=body.vibes or club["vibes"],
-                    audiences=body.audiences or club["audiences"], description=body.description)
+                    funding_needed=gap, vibes=body.vibes or club["vibes"],
+                    audiences=body.audiences or club["audiences"], description=body.description,
+                    format="family-style", interests=[], age_group=None, total_cost=total, ticket_price=ticket,
+                    max_sponsors=3, preferred_cats=[], excluded_cats=[])
     return event_view(get_or_404("events", eid))
+
+
+class EventProfile(BaseModel):
+    title: Optional[str] = None
+    date: Optional[str] = None
+    guests: Optional[int] = None
+    description: Optional[str] = None
+    format: Optional[str] = None
+    vibes: Optional[List[str]] = None
+    audiences: Optional[List[str]] = None
+    interests: Optional[List[str]] = None
+    age_group: Optional[str] = None
+    total_cost: Optional[float] = None
+    ticket_price: Optional[float] = None
+    max_sponsors: Optional[int] = None
+    preferred_cats: Optional[List[str]] = None
+    excluded_cats: Optional[List[str]] = None
+
+
+@app.patch("/api/events/{event_id}")
+def update_event(event_id: int, body: EventProfile):
+    ev = get_or_404("events", event_id)
+    ch = {k: v for k, v in body.model_dump().items() if v is not None}
+    if ch.get("guests") is not None and ch["guests"] < 1:
+        raise HTTPException(400, "Guests must be at least 1.")
+    if any(ch.get(k, 0) < 0 for k in ("total_cost", "ticket_price")):
+        raise HTTPException(400, "Costs and ticket prices cannot be negative.")
+    if ch.get("max_sponsors") is not None and not 1 <= ch["max_sponsors"] <= 10:
+        raise HTTPException(400, "Sponsor capacity must be between 1 and 10.")
+    if set(ch.get("preferred_cats") or []) & set(ch.get("excluded_cats") or []):
+        raise HTTPException(400, "A category cannot be both preferred and excluded.")
+    if ch:
+        db.update("events", event_id, **ch)
+    ev = get_or_404("events", event_id)
+    total = ev["total_cost"] if ev["total_cost"] is not None else ev["funding_needed"]
+    db.update("events", event_id, funding_needed=max(0.0, (total or 0) - (ev["ticket_price"] or 0) * ev["guests"]))
+    return event_view(get_or_404("events", event_id))
 
 
 @app.post("/api/events/{event_id}/cover")
@@ -236,9 +336,25 @@ def delete_slot(slot_id: int):
 
 
 # ------------------------------------------------------------------ deals: buy, bid, propose
+def _check_fit(slot, sponsor_id):
+    """Hard rules that protect the dinner: excluded categories, one brand per category, sponsor capacity."""
+    ev = event_view(get_or_404("events", slot["event_id"]))
+    sp = get_or_404("sponsors", sponsor_id)
+    d = ev["density"]
+    label = seed.CATEGORIES.get(sp["cat"], sp["category"])
+    if sp["cat"] in (ev.get("excluded_cats") or []):
+        raise HTTPException(409, f"The host does not take {label.lower()} sponsors at this dinner.")
+    if sponsor_id not in d["sponsor_ids"]:
+        if sp["cat"] in d["taken_cats"]:
+            raise HTTPException(409, f"Another {label.lower()} brand already sponsors this dinner. Each category is exclusive.")
+        if d["at_capacity"]:
+            raise HTTPException(409, f"This dinner has reached its limit of {d['max_sponsors']} sponsors.")
+
+
 def _reserve(slot, sponsor_id, price, source, offer_id=None):
     if slot["status"] != "open":
         raise HTTPException(409, "This slot is no longer available.")
+    _check_fit(slot, sponsor_id)
     oid = db.insert("orders", slot_id=slot["id"], sponsor_id=sponsor_id, offer_id=offer_id, source=source,
                     price=price, fee=None, net=None, status="awaiting_payment", note="", created=now(),
                     paid_at=None, released_at=None)
@@ -274,6 +390,7 @@ def place_bid(slot_id: int, body: Bid):
         raise HTTPException(409, "This slot is no longer available.")
     if body.amount <= 0:
         raise HTTPException(400, "A bid must be more than zero.")
+    _check_fit(slot, body.sponsor_id)
     oid = db.insert("offers", slot_id=slot_id, sponsor_id=body.sponsor_id, from_side="sponsor",
                     amount=body.amount, message=body.message, status="pending", created=now())
     return offer_view(get_or_404("offers", oid))
@@ -294,6 +411,7 @@ def propose(body: Proposal):
         raise HTTPException(409, "This slot is no longer available.")
     if body.amount <= 0:
         raise HTTPException(400, "An offer must be more than zero.")
+    _check_fit(slot, body.sponsor_id)
     oid = db.insert("offers", slot_id=body.slot_id, sponsor_id=body.sponsor_id, from_side="host",
                     amount=body.amount, message=body.message, status="pending", created=now())
     return offer_view(get_or_404("offers", oid))
@@ -492,7 +610,45 @@ def overview():
         "ai_cost": sum(p["ai_cost"] or 0 for o in orders for p in o["proofs"]),
         "photos_checked": sum(len(p["photos"]) for o in orders for p in o["proofs"]),
         "counts": {s: sum(1 for o in orders if o["status"] == s) for s in payments.STATUS_LABEL},
+        "performance": _performance(orders),
         "ledger": db.q("SELECT * FROM ledger ORDER BY id DESC LIMIT 40"),
+    }
+
+
+def _performance(orders):
+    """Baseline marketplace metrics from demo activity. No targets: these establish a starting point."""
+    live = [o for o in orders if o["status"] != "refunded"]
+    paid = [o for o in orders if o["status"] in payments.HELD + ("released",)]
+    events = [event_view(r) for r in db.q("SELECT * FROM events")]
+    offers = db.q("SELECT * FROM offers")
+    searches = db.q("SELECT side FROM searches")
+    by_sponsor = {}
+    for o in live:
+        by_sponsor[o["sponsor"]["id"]] = by_sponsor.get(o["sponsor"]["id"], 0) + 1
+    with_proof = [o for o in paid if o["proofs"]]
+    verified = [o for o in paid if o["status"] in ("ready_for_payout", "released")]
+    funded = [e for e in events if e["funding"]["gross"] > 0]
+    active_ev = set()
+    for x in offers:
+        sl = db.one("SELECT event_id FROM slots WHERE id=?", (x["slot_id"],))
+        if sl:
+            active_ev.add(sl["event_id"])
+    for e in events:
+        if e["density"]["placements"]:
+            active_ev.add(e["id"])
+    pct = lambda a, b: round(a / b * 100) if b else None
+    return {
+        "searches": len(searches), "deals": len(live),
+        "search_to_booking": pct(len(live), len(searches)),
+        "offers": len(offers),
+        "match_to_deal": pct(sum(1 for x in offers if x["status"] == "accepted"), len(offers)),
+        "avg_revenue_per_event": round(sum(e["funding"]["gross"] for e in funded) / len(funded)) if funded else 0,
+        "avg_gap_covered": round(sum(e["funding"]["pct"] for e in events) / len(events)) if events else 0,
+        "liquidity": pct(len(active_ev), len(events)),
+        "verification_rate": pct(len(verified), len(with_proof)),
+        "repeat_rate": pct(sum(1 for n in by_sponsor.values() if n > 1), len(by_sponsor)),
+        "heavy_events": [e["title"] for e in events if e["density"]["flag"]],
+        "events": len(events),
     }
 
 

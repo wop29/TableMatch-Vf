@@ -13,7 +13,8 @@ CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS sponsors (
   id INTEGER PRIMARY KEY, name TEXT, category TEXT, blurb TEXT,
   vibes TEXT, audiences TEXT, places TEXT,
-  budget_min REAL, budget_max REAL, min_guests INTEGER, max_guests INTEGER, color TEXT
+  budget_min REAL, budget_max REAL, min_guests INTEGER, max_guests INTEGER, color TEXT,
+  cat TEXT, interests TEXT, age_groups TEXT, engagement TEXT
 );
 CREATE TABLE IF NOT EXISTS clubs (
   id INTEGER PRIMARY KEY, name TEXT, host_name TEXT, neighborhood TEXT, borough TEXT,
@@ -22,7 +23,9 @@ CREATE TABLE IF NOT EXISTS clubs (
 CREATE TABLE IF NOT EXISTS events (
   id INTEGER PRIMARY KEY, club_id INTEGER, title TEXT, date TEXT, venue TEXT,
   neighborhood TEXT, borough TEXT, guests INTEGER, funding_needed REAL,
-  vibes TEXT, audiences TEXT, description TEXT, cover TEXT
+  vibes TEXT, audiences TEXT, description TEXT, cover TEXT,
+  format TEXT, interests TEXT, age_group TEXT, total_cost REAL, ticket_price REAL, max_sponsors INTEGER,
+  preferred_cats TEXT, excluded_cats TEXT
 );
 CREATE TABLE IF NOT EXISTS slots (
   id INTEGER PRIMARY KEY, event_id INTEGER, type TEXT, title TEXT, specs TEXT,
@@ -44,12 +47,14 @@ CREATE TABLE IF NOT EXISTS proofs (
 CREATE TABLE IF NOT EXISTS feedback (
   id INTEGER PRIMARY KEY, ts TEXT, role TEXT, rating INTEGER, message TEXT, page TEXT
 );
+CREATE TABLE IF NOT EXISTS searches (id INTEGER PRIMARY KEY, ts TEXT, side TEXT, results INTEGER);
 CREATE TABLE IF NOT EXISTS ledger (
   id INTEGER PRIMARY KEY, order_id INTEGER, ts TEXT, kind TEXT, amount REAL, note TEXT
 );
 """
 
-JSON_FIELDS = {"vibes", "audiences", "places", "checks", "photos"}
+JSON_FIELDS = {"vibes", "audiences", "places", "checks", "photos", "interests", "age_groups", "engagement",
+               "preferred_cats", "excluded_cats"}
 
 
 def conn():
@@ -111,9 +116,14 @@ def init():
     try:
         c.executescript(SCHEMA)
         # older databases were created before covers existed
-        cols = [r["name"] for r in c.execute("PRAGMA table_info(events)").fetchall()]
-        if "cover" not in cols:
-            c.execute("ALTER TABLE events ADD COLUMN cover TEXT")
+        add = {"events": ["cover TEXT", "format TEXT", "interests TEXT", "age_group TEXT", "total_cost REAL",
+                          "ticket_price REAL", "max_sponsors INTEGER", "preferred_cats TEXT", "excluded_cats TEXT"],
+               "sponsors": ["cat TEXT", "interests TEXT", "age_groups TEXT", "engagement TEXT"]}
+        for table, defs in add.items():
+            cols = [r["name"] for r in c.execute(f"PRAGMA table_info({table})").fetchall()]
+            for d in defs:
+                if d.split()[0] not in cols:
+                    c.execute(f"ALTER TABLE {table} ADD COLUMN {d}")
         c.commit()
     finally:
         c.close()
@@ -122,7 +132,7 @@ def init():
 def wipe():
     c = conn()
     try:
-        for t in ("settings", "sponsors", "clubs", "events", "slots", "offers", "orders", "proofs", "ledger"):
+        for t in ("settings", "sponsors", "clubs", "events", "slots", "offers", "orders", "proofs", "ledger", "searches"):
             c.execute(f"DROP TABLE IF EXISTS {t}")
         c.commit()
     finally:
@@ -142,7 +152,10 @@ DEFAULT_SETTINGS = {
 def get_settings():
     out = dict(DEFAULT_SETTINGS)
     for r in q("SELECT key, value FROM settings"):
-        out[r["key"]] = float(r["value"])
+        try:
+            out[r["key"]] = float(r["value"])
+        except ValueError:
+            out[r["key"]] = r["value"]
     return out
 
 
