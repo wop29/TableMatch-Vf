@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tablematch prototype</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body data-role="sponsor">
+<a class="skip" href="#app">Skip to content</a>
+<header class="top">
+  <div class="top-inner">
+    <a class="mark" href="/" aria-label="Tablematch home"><span class="logo-t" aria-hidden="true">t</span><span>tablematch</span></a>
+    <div class="seg" role="group" aria-label="Choose a side of the marketplace" id="roles"></div>
+    <div class="who">
+      <button type="button" class="round" data-act="display" aria-label="Display settings">Aa</button>
+      <label class="persona"><span id="persona-label">Acting as</span>
+        <select id="persona"></select></label>
+    </div>
+  </div>
+  <nav class="tabs" id="tabs" aria-label="Sections"></nav>
+</header>
+<main id="app" tabindex="-1"><p class="loading">Loading the demo marketplace</p></main>
+<footer class="foot">
+  <span>Prototype with fictional sponsors, supper clubs and simulated payments. Dinner photos are illustrative. Good brands. Great tables.</span>
+  <button class="link-btn" data-act="welcome">How this works</button>
+  <button class="link-btn" data-act="feedback">Give feedback</button>
+  <button class="link-btn" data-act="reset">Reset demo data</button>
+</footer>
+<dialog id="dlg"></dialog>
+<div id="toasts" role="status" aria-live="polite"></div>
+<script src="/static/app.js"></script>
+</body>
+</html>
