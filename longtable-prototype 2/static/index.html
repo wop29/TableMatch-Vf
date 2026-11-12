@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Longtable prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body data-role="sponsor">
+<a class="skip" href="#app">Skip to content</a>
+<header class="top">
+  <div class="top-inner">
+    <a class="mark" href="/" aria-label="Longtable home">
+      <svg width="30" height="26" viewBox="0 0 30 26" aria-hidden="true"><path d="M2 9 H28" stroke="currentColor" stroke-width="3" stroke-linecap="round"/><path d="M6 9 V22 M24 9 V22" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><circle cx="9" cy="4" r="2" fill="currentColor"/><circle cx="15" cy="4" r="2" fill="currentColor"/><circle cx="21" cy="4" r="2" fill="currentColor"/></svg>
+      <span>Longtable</span>
+    </a>
+    <div class="seg" role="group" aria-label="Choose a side of the marketplace" id="roles"></div>
+    <div class="who">
+      <button type="button" class="round" data-act="display" aria-label="Display settings">Aa</button>
+      <label class="persona"><span id="persona-label">Acting as</span>
+        <select id="persona"></select></label>
+    </div>
+  </div>
+  <nav class="tabs" id="tabs" aria-label="Sections"></nav>
+</header>
+<main id="app" tabindex="-1"><p class="loading">Loading the demo marketplace</p></main>
+<footer class="foot">
+  <span>Prototype with fictional sponsors, supper clubs and simulated payments.</span>
+  <button class="link-btn" data-act="welcome">How this works</button>
+  <button class="link-btn" data-act="feedback">Give feedback</button>
+  <button class="link-btn" data-act="reset">Reset demo data</button>
+</footer>
+<dialog id="dlg"></dialog>
+<div id="toasts" role="status" aria-live="polite"></div>
+<script src="/static/app.js"></script>
+</body>
+</html>
