@@ -25,7 +25,8 @@ CREATE TABLE IF NOT EXISTS events (
   neighborhood TEXT, borough TEXT, guests INTEGER, funding_needed REAL,
   vibes TEXT, audiences TEXT, description TEXT, cover TEXT,
   format TEXT, interests TEXT, age_group TEXT, total_cost REAL, ticket_price REAL, max_sponsors INTEGER,
-  preferred_cats TEXT, excluded_cats TEXT, kind TEXT, interested INTEGER
+  preferred_cats TEXT, excluded_cats TEXT, kind TEXT, interested INTEGER,
+  bundle_discount_pct REAL, bundle_min INTEGER
 );
 CREATE TABLE IF NOT EXISTS slots (
   id INTEGER PRIMARY KEY, event_id INTEGER, type TEXT, title TEXT, specs TEXT,
@@ -38,7 +39,7 @@ CREATE TABLE IF NOT EXISTS offers (
 CREATE TABLE IF NOT EXISTS orders (
   id INTEGER PRIMARY KEY, slot_id INTEGER, sponsor_id INTEGER, offer_id INTEGER,
   source TEXT, price REAL, fee REAL, net REAL, status TEXT, note TEXT,
-  created TEXT, paid_at TEXT, released_at TEXT, signoff TEXT
+  created TEXT, paid_at TEXT, released_at TEXT, signoff TEXT, deal_id INTEGER
 );
 CREATE TABLE IF NOT EXISTS proofs (
   id INTEGER PRIMARY KEY, order_id INTEGER, created TEXT, mode TEXT, decision TEXT,
@@ -48,6 +49,14 @@ CREATE TABLE IF NOT EXISTS proofs (
 CREATE TABLE IF NOT EXISTS feedback (
   id INTEGER PRIMARY KEY, ts TEXT, role TEXT, rating INTEGER, message TEXT, page TEXT
 );
+CREATE TABLE IF NOT EXISTS packages (
+  id INTEGER PRIMARY KEY, event_id INTEGER, name TEXT, tier TEXT, description TEXT,
+  slot_ids TEXT, discount_pct REAL DEFAULT 0, active INTEGER DEFAULT 1, created TEXT
+);
+CREATE TABLE IF NOT EXISTS deals (
+  id INTEGER PRIMARY KEY, sponsor_id INTEGER, event_id INTEGER, package_id INTEGER, name TEXT,
+  list_total REAL, discount REAL, price REAL, created TEXT
+);
 CREATE TABLE IF NOT EXISTS searches (id INTEGER PRIMARY KEY, ts TEXT, side TEXT, results INTEGER);
 CREATE TABLE IF NOT EXISTS ledger (
   id INTEGER PRIMARY KEY, order_id INTEGER, ts TEXT, kind TEXT, amount REAL, note TEXT
@@ -55,7 +64,7 @@ CREATE TABLE IF NOT EXISTS ledger (
 """
 
 JSON_FIELDS = {"vibes", "audiences", "places", "checks", "photos", "interests", "age_groups", "engagement",
-               "preferred_cats", "excluded_cats", "links"}
+               "preferred_cats", "excluded_cats", "links", "slot_ids"}
 
 
 def conn():
@@ -118,9 +127,10 @@ def init():
         c.executescript(SCHEMA)
         # older databases were created before covers existed
         add = {"events": ["cover TEXT", "format TEXT", "interests TEXT", "age_group TEXT", "total_cost REAL",
-                          "ticket_price REAL", "max_sponsors INTEGER", "preferred_cats TEXT", "excluded_cats TEXT", "kind TEXT", "interested INTEGER"],
+                          "ticket_price REAL", "max_sponsors INTEGER", "preferred_cats TEXT", "excluded_cats TEXT", "kind TEXT", "interested INTEGER",
+                   "bundle_discount_pct REAL", "bundle_min INTEGER"],
                "proofs": ["links TEXT", "checkins INTEGER"],
-               "orders": ["signoff TEXT"],
+               "orders": ["signoff TEXT", "deal_id INTEGER"],
                "sponsors": ["cat TEXT", "interests TEXT", "age_groups TEXT", "engagement TEXT"]}
         for table, defs in add.items():
             cols = [r["name"] for r in c.execute(f"PRAGMA table_info({table})").fetchall()]
@@ -135,7 +145,7 @@ def init():
 def wipe():
     c = conn()
     try:
-        for t in ("settings", "sponsors", "clubs", "events", "slots", "offers", "orders", "proofs", "ledger", "searches"):
+        for t in ("settings", "sponsors", "clubs", "events", "slots", "offers", "orders", "proofs", "ledger", "searches", "packages", "deals"):
             c.execute(f"DROP TABLE IF EXISTS {t}")
         c.commit()
     finally:

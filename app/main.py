@@ -89,7 +89,33 @@ def event_view(ev, with_slots=True):
                      "per_10_guests": round(per10, 2), "level": level, "flag": level == "Heavy"}
     if with_slots:
         ev["slots"] = slots
+        by_id = {x["id"]: x for x in slots}
+        ev["packages"] = [package_view(p, by_id, ev) for p in
+                          db.q("SELECT * FROM packages WHERE event_id=? AND active=1 ORDER BY id", (ev["id"],))]
     return ev
+
+
+def _preview(o):
+    """Fee for one placement. Inside a package the cap applies to the whole deal, split by price."""
+    st = db.get_settings()
+    if not o.get("deal_id"):
+        return payments.preview(o["price"], st)
+    deal = db.one("SELECT * FROM deals WHERE id=?", (o["deal_id"],))
+    d = payments.preview(deal["price"], st)
+    share = o["price"] / deal["price"] if deal["price"] else 0
+    fee = round(d["fee"] * share, 2)
+    return dict(d, price=round(o["price"], 2), fee=fee, net=round(o["price"] - fee, 2), deal_price=deal["price"])
+
+
+def deal_view(d):
+    ev = event_view(get_or_404("events", d["event_id"]), with_slots=False)
+    orders = [order_view(o) for o in db.q("SELECT * FROM orders WHERE deal_id=? ORDER BY id", (d["id"],))]
+    pk = db.one("SELECT * FROM packages WHERE id=?", (d["package_id"],)) if d["package_id"] else None
+    live = [o for o in orders if o["status"] != "refunded"]
+    return dict(d, event=ev, orders=orders, package=pk,
+                awaiting=all(o["status"] == "awaiting_payment" for o in live) and bool(live),
+                verified=sum(1 for o in live if o["status"] in ("ready_for_payout", "released")),
+                total=len(live))
 
 
 def order_view(o):
@@ -99,9 +125,9 @@ def order_view(o):
     sp = db.one("SELECT * FROM sponsors WHERE id=?", (o["sponsor_id"],))
     proofs = db.q("SELECT * FROM proofs WHERE order_id=? ORDER BY id DESC", (o["id"],))
     s = db.get_settings()
-    est = payments.preview(o["price"], s)
+    est = _preview(o)
     return dict(o, status_label=payments.STATUS_LABEL[o["status"]], slot=slot,
-                event={k: ev[k] for k in ("id", "title", "date", "neighborhood", "guests")},
+                event={k: ev[k] for k in ("id", "title", "date", "neighborhood", "borough", "guests", "cover", "kind")},
                 club={"id": club["id"], "name": club["name"], "host_name": club["host_name"]},
                 sponsor={"id": sp["id"], "name": sp["name"], "color": sp["color"]},
                 proofs=proofs, latest_proof=proofs[0] if proofs else None,
@@ -473,8 +499,10 @@ def _order(order_id, *allowed):
 @app.post("/api/orders/{order_id}/pay")
 def pay(order_id: int):
     o = _order(order_id, "awaiting_payment")
-    fee, net, _ = payments.compute_fee(o["price"], *[db.get_settings()[k] for k in ("fee_rate", "fee_cap")])
-    db.update("orders", order_id, status="in_escrow", fee=fee, net=net, paid_at=now())
+    if o.get("deal_id"):
+        raise HTTPException(409, "This placement is part of a package. Pay for the whole package instead.")
+    p = _preview(o)
+    db.update("orders", order_id, status="in_escrow", fee=p["fee"], net=p["net"], paid_at=now())
     ledger(order_id, "charge", o["price"], "Sponsor paid the platform, funds held in escrow")
     return order_view(get_or_404("orders", order_id))
 
@@ -482,6 +510,8 @@ def pay(order_id: int):
 @app.post("/api/orders/{order_id}/cancel")
 def cancel(order_id: int):
     o = _order(order_id, "awaiting_payment")
+    if o.get("deal_id"):
+        raise HTTPException(409, "This placement is part of a package. Cancel the whole package instead.")
     db.update("orders", order_id, status="refunded", note="Cancelled before payment")
     db.update("slots", o["slot_id"], status="open")
     return order_view(get_or_404("orders", order_id))
@@ -608,8 +638,7 @@ def review(order_id: int, body: Review):
 @app.get("/api/orders/{order_id}/payout-preview")
 def payout_preview(order_id: int):
     o = get_or_404("orders", order_id)
-    p = payments.preview(o["price"], db.get_settings())
-    return dict(p, order_id=order_id)
+    return dict(_preview(o), order_id=order_id)
 
 
 class Release(BaseModel):
@@ -621,10 +650,10 @@ def release(order_id: int, body: Release):
     o = _order(order_id, "ready_for_payout")
     if not body.confirm:
         raise HTTPException(400, "Confirm the transfer to release funds.")
-    p = payments.preview(o["price"], db.get_settings())
+    p = _preview(o)
     db.update("orders", order_id, status="released", fee=p["fee"], net=p["net"], released_at=now(),
               note="Paid out to host")
-    ledger(order_id, "fee", p["fee"], f"Platform fee deducted ({p['rate']:.0%}, cap ${p['cap']:,.0f})")
+    ledger(order_id, "fee", p["fee"], f"Platform fee deducted ({p['rate']:.0%}, cap ${p['cap']:,.0f}" + (" per package" if o.get("deal_id") else "") + ")")
     ledger(order_id, "transfer", p["net"], "Transferred to host")
     return order_view(get_or_404("orders", order_id))
 
@@ -636,6 +665,179 @@ def refund(order_id: int):
     db.update("slots", o["slot_id"], status="open")
     ledger(order_id, "refund", o["price"], "Refunded to sponsor")
     return order_view(get_or_404("orders", order_id))
+
+
+# ------------------------------------------------------------------ packages and multi-placement deals
+def package_view(pk, slots_by_id, ev):
+    slots = [slots_by_id[i] for i in pk["slot_ids"] if i in slots_by_id]
+    list_total = sum(x["price"] for x in slots)
+    discount = round(list_total * (pk["discount_pct"] or 0) / 100, 2)
+    unavailable = [x["title"] for x in slots if x["status"] != "open"]
+    return dict(pk, slots=slots, list_total=list_total, discount=discount, price=round(list_total - discount, 2),
+                available=not unavailable and len(slots) == len(pk["slot_ids"]), unavailable=unavailable)
+
+
+def quote(event_id, slot_ids, package_id=None):
+    """Price a set of placements at one event. Packages use their own discount; a custom set of
+    `bundle_min` or more placements gets the host's bundle discount."""
+    ev = get_or_404("events", event_id)
+    if not slot_ids:
+        raise HTTPException(400, "Pick at least one placement.")
+    if len(set(slot_ids)) != len(slot_ids):
+        raise HTTPException(400, "Each placement can only be picked once.")
+    slots = [get_or_404("slots", i) for i in slot_ids]
+    if any(x["event_id"] != event_id for x in slots):
+        raise HTTPException(400, "All placements in a package must be at the same event.")
+    taken = [x["title"] for x in slots if x["status"] != "open"]
+    pct, name = 0.0, "Custom package"
+    if package_id:
+        pk = get_or_404("packages", package_id)
+        if pk["event_id"] != event_id or not pk["active"]:
+            raise HTTPException(400, "That package is not offered at this event.")
+        if sorted(pk["slot_ids"]) != sorted(slot_ids):
+            raise HTTPException(400, "A package must be bought as defined. Use the builder for a custom mix.")
+        pct, name = pk["discount_pct"] or 0, pk["name"]
+    elif len(slot_ids) >= (ev["bundle_min"] or 3):
+        pct = ev["bundle_discount_pct"] or 0
+    list_total = sum(x["price"] for x in slots)
+    discount = round(list_total * pct / 100, 2)
+    return {"event_id": event_id, "name": name, "slots": slots, "list_total": list_total, "discount_pct": pct,
+            "discount": discount, "price": round(list_total - discount, 2), "unavailable": taken,
+            "fee_preview": payments.preview(list_total - discount, db.get_settings())}
+
+
+class QuoteBody(BaseModel):
+    event_id: int
+    slot_ids: List[int]
+    package_id: Optional[int] = None
+    sponsor_id: Optional[int] = None
+
+
+@app.post("/api/quote")
+def get_quote(body: QuoteBody):
+    return quote(body.event_id, body.slot_ids, body.package_id)
+
+
+@app.post("/api/deals")
+def create_deal(body: QuoteBody):
+    if not body.sponsor_id:
+        raise HTTPException(400, "Choose which brand is buying.")
+    get_or_404("sponsors", body.sponsor_id)
+    q = quote(body.event_id, body.slot_ids, body.package_id)
+    if q["unavailable"]:
+        raise HTTPException(409, "No longer available: " + ", ".join(q["unavailable"]) + ". Pick other placements.")
+    _check_fit(q["slots"][0], body.sponsor_id)  # one check covers the event: category, exclusions, capacity
+    did = db.insert("deals", sponsor_id=body.sponsor_id, event_id=body.event_id, package_id=body.package_id,
+                    name=q["name"], list_total=q["list_total"], discount=q["discount"], price=q["price"], created=now())
+    ratio = q["price"] / q["list_total"] if q["list_total"] else 1
+    for x in q["slots"]:
+        oid = _reserve(x, body.sponsor_id, round(x["price"] * ratio, 2), "package")
+        db.update("orders", oid, deal_id=did)
+    return deal_view(get_or_404("deals", did))
+
+
+@app.get("/api/deals")
+def list_deals(sponsor_id: Optional[int] = None, event_id: Optional[int] = None):
+    sql, args = "SELECT * FROM deals WHERE 1=1", []
+    if sponsor_id:
+        sql += " AND sponsor_id=?"; args.append(sponsor_id)
+    if event_id:
+        sql += " AND event_id=?"; args.append(event_id)
+    return [deal_view(d) for d in db.q(sql + " ORDER BY id DESC", args)]
+
+
+@app.post("/api/deals/{deal_id}/pay")
+def pay_deal(deal_id: int):
+    """One consolidated payment for every placement in the package, held in escrow."""
+    d = get_or_404("deals", deal_id)
+    orders = db.q("SELECT * FROM orders WHERE deal_id=? AND status='awaiting_payment'", (deal_id,))
+    if not orders:
+        raise HTTPException(409, "Nothing in this package is waiting for payment.")
+    for o in orders:
+        p = _preview(o)
+        db.update("orders", o["id"], status="in_escrow", fee=p["fee"], net=p["net"], paid_at=now())
+        ledger(o["id"], "charge", o["price"], f"Part of package payment for deal {deal_id}, held in escrow")
+    return deal_view(d)
+
+
+@app.post("/api/deals/{deal_id}/cancel")
+def cancel_deal(deal_id: int):
+    d = get_or_404("deals", deal_id)
+    orders = db.q("SELECT * FROM orders WHERE deal_id=?", (deal_id,))
+    if any(o["status"] not in ("awaiting_payment", "refunded") for o in orders):
+        raise HTTPException(409, "This package is already paid. Ask the platform for a refund instead.")
+    for o in orders:
+        if o["status"] == "awaiting_payment":
+            db.update("orders", o["id"], status="refunded", note="Package cancelled before payment")
+            db.update("slots", o["slot_id"], status="open")
+    return deal_view(d)
+
+
+class PackageBody(BaseModel):
+    name: str
+    slot_ids: List[int]
+    discount_pct: float = 0
+    description: str = ""
+    tier: str = "custom"
+    active: bool = True
+
+
+def _check_package(event_id, body):
+    if not body.name.strip():
+        raise HTTPException(400, "Give the package a name.")
+    if len(set(body.slot_ids)) < 2:
+        raise HTTPException(400, "A package needs at least two different placements.")
+    if not 0 <= body.discount_pct <= 50:
+        raise HTTPException(400, "Bundle discounts must be between 0% and 50%.")
+    for i in body.slot_ids:
+        if get_or_404("slots", i)["event_id"] != event_id:
+            raise HTTPException(400, "Packages can only include placements from this event.")
+
+
+@app.get("/api/events/{event_id}/packages")
+def list_packages(event_id: int):
+    ev = get_or_404("events", event_id)
+    slots = {x["id"]: x for x in db.q("SELECT * FROM slots WHERE event_id=?", (event_id,))}
+    return [package_view(p, slots, ev) for p in db.q("SELECT * FROM packages WHERE event_id=? ORDER BY id", (event_id,))]
+
+
+@app.post("/api/events/{event_id}/packages")
+def create_package(event_id: int, body: PackageBody):
+    get_or_404("events", event_id)
+    _check_package(event_id, body)
+    db.insert("packages", event_id=event_id, name=body.name.strip(), tier=body.tier, description=body.description,
+              slot_ids=list(dict.fromkeys(body.slot_ids)), discount_pct=body.discount_pct, active=1, created=now())
+    return list_packages(event_id)
+
+
+@app.put("/api/packages/{package_id}")
+def update_package(package_id: int, body: PackageBody):
+    pk = get_or_404("packages", package_id)
+    _check_package(pk["event_id"], body)
+    db.update("packages", package_id, name=body.name.strip(), description=body.description,
+              slot_ids=list(dict.fromkeys(body.slot_ids)), discount_pct=body.discount_pct, active=1 if body.active else 0)
+    return list_packages(pk["event_id"])
+
+
+@app.delete("/api/packages/{package_id}")
+def delete_package(package_id: int):
+    pk = get_or_404("packages", package_id)
+    db.run("DELETE FROM packages WHERE id=?", (package_id,))
+    return list_packages(pk["event_id"])
+
+
+class BundleBody(BaseModel):
+    bundle_discount_pct: float
+    bundle_min: int = 3
+
+
+@app.put("/api/events/{event_id}/bundle")
+def set_bundle(event_id: int, body: BundleBody):
+    get_or_404("events", event_id)
+    if not 0 <= body.bundle_discount_pct <= 50 or body.bundle_min < 2:
+        raise HTTPException(400, "Discount must be 0% to 50%, for 2 or more placements.")
+    db.update("events", event_id, bundle_discount_pct=body.bundle_discount_pct, bundle_min=body.bundle_min)
+    return event_view(get_or_404("events", event_id))
 
 
 # ------------------------------------------------------------------ platform
@@ -655,6 +857,20 @@ def overview():
         "performance": _performance(orders),
         "ledger": db.q("SELECT * FROM ledger ORDER BY id DESC LIMIT 40"),
     }
+
+
+def _avg_deal(live):
+    """Group placements into transactions: a package is one transaction, a single slot is one."""
+    groups = {}
+    for o in live:
+        key = ("d", o["deal_id"]) if o.get("deal_id") else ("o", o["id"])
+        groups.setdefault(key, []).append(o)
+    if not groups:
+        return 0, 0, None
+    n = len(groups)
+    pk = sum(1 for k in groups if k[0] == "d")
+    return (round(sum(sum(x["price"] for x in g) for g in groups.values()) / n),
+            round(sum(len(g) for g in groups.values()) / n, 1), round(pk / n * 100))
 
 
 def _performance(orders):
@@ -690,6 +906,9 @@ def _performance(orders):
         "verification_rate": pct(len(verified), len(with_proof)),
         "repeat_rate": pct(sum(1 for n in by_sponsor.values() if n > 1), len(by_sponsor)),
         "heavy_events": [e["title"] for e in events if e["density"]["flag"]],
+        "avg_deal_value": _avg_deal(live)[0],
+        "avg_placements": _avg_deal(live)[1],
+        "package_share": _avg_deal(live)[2],
         "events": len(events),
     }
 

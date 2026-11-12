@@ -100,3 +100,11 @@ The weights are starting points to validate with users. They are not tuned resul
 - **Placement preview:** a mock of what the sponsor is buying, drawn with the brand's name (menu line, named welcome drink, gift bag, table card, screen, invitation). It appears on the event page and in My deals.
 - **More proof:** hosts can add links to posts and a guest check-in count alongside photos. After verification the sponsor confirms or disputes. A dispute pauses the payout and goes to review. In the real product it would confirm itself after 72 hours.
 - **Price fields:** money fields accept any amount.
+
+## Packages and the My deals page
+
+- **Packages:** every event offers Supporting, Featured and Presenting packages built from its own placements, at 0%, 10% and 15% off. Hosts can create, edit and delete packages and set a bundle discount for custom mixes (default 5% for 3 or more placements).
+- **Custom builder:** sponsors tick any mix of placements and see the combined price and discount before checkout. A single placement keeps buy-now and bidding.
+- **One agreement, one payment:** a package is reserved as one deal and paid once into escrow. The fee cap applies to the whole deal. Each placement keeps its own proof, verification, sign-off, payout and refund.
+- **Conflicts:** sold placements make a package unavailable. Category exclusivity and sponsor caps apply to the whole package.
+- **My deals:** one card per sponsorship, showing the cover photo, event facts, the stage (before the event, after it, completed), the price and any savings, and a deliverables breakdown. Each placement shows an illustrative preview, what it covers, the delivery date, the proof needed and its own status. A proof gallery shows only the photos the host uploaded. There is a printable report and a "book again" link.

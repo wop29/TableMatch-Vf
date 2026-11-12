@@ -331,3 +331,60 @@ def test_proof_links_checkins_and_sponsor_signoff():
     o = c.post(f"/api/orders/{tide['id']}/review", json={"decision": "approve"}).json()
     assert o["status"] == "ready_for_payout"
     assert c.post(f"/api/orders/{tide['id']}/signoff", json={"decision": "confirm"}).json()["signoff"] == "confirmed"
+
+
+# --- packages and multi-placement deals ------------------------------------------------------
+def test_predefined_package_one_payment_separate_fulfilment():
+    fresh()
+    ev = event("Founders table: the bridge dinner")
+    pk = next(p for p in ev["packages"] if p["tier"] == "presenting")
+    assert pk["available"] and pk["discount"] == round(pk["list_total"] * 0.15, 2)
+    sun = sponsor("Sunbrew")["id"]
+    d = c.post("/api/deals", json={"event_id": ev["id"], "slot_ids": pk["slot_ids"], "package_id": pk["id"], "sponsor_id": sun}).json()
+    assert d["price"] == pk["price"] and d["total"] == len(pk["slot_ids"]) and d["awaiting"]
+    assert abs(sum(o["price"] for o in d["orders"]) - d["price"]) < 0.05
+    # placements in a package cannot be paid one by one
+    assert c.post(f"/api/orders/{d['orders'][0]['id']}/pay").status_code == 409
+    d = c.post(f"/api/deals/{d['id']}/pay").json()
+    assert all(o["status"] == "in_escrow" for o in d["orders"])
+    # each placement is verified on its own
+    first = d["orders"][0]["id"]
+    c.post(f"/api/orders/{first}/proof", data={"scenario": "good"})
+    d = c.get(f"/api/deals?sponsor_id={sun}").json()[0]
+    assert d["verified"] == 1 and d["total"] == len(pk["slot_ids"])
+    # the package is no longer offered once its slots are sold
+    assert not next(p for p in event("Founders table: the bridge dinner")["packages"] if p["id"] == pk["id"])["available"]
+
+
+def test_custom_builder_bundle_discount_and_conflicts():
+    fresh()
+    ev = event("The Ex Files: swap out your ex's stuff")
+    ids = [x["id"] for x in ev["slots"] if x["type"] in ("menu", "gift", "display")]
+    q = c.post("/api/quote", json={"event_id": ev["id"], "slot_ids": ids}).json()
+    assert q["discount_pct"] == 5 and q["price"] == round(q["list_total"] * 0.95, 2)
+    q2 = c.post("/api/quote", json={"event_id": ev["id"], "slot_ids": ids[:2]}).json()
+    assert q2["discount"] == 0
+    c.put(f"/api/events/{ev['id']}/bundle", json={"bundle_discount_pct": 12, "bundle_min": 2})
+    assert c.post("/api/quote", json={"event_id": ev["id"], "slot_ids": ids[:2]}).json()["discount_pct"] == 12
+    d = c.post("/api/deals", json={"event_id": ev["id"], "slot_ids": ids, "sponsor_id": sponsor("Leafline")["id"]}).json()
+    assert d["name"] == "Custom package"
+    r = c.post("/api/deals", json={"event_id": ev["id"], "slot_ids": ids[:1], "sponsor_id": sponsor("Glowlab")["id"]})
+    assert r.status_code == 409
+    c.post(f"/api/deals/{d['id']}/cancel")
+    assert all(s["status"] == "open" for s in event("The Ex Files: swap out your ex's stuff")["slots"] if s["id"] in ids)
+
+
+def test_host_creates_edits_and_deletes_packages():
+    fresh()
+    ev = event("Bridge run and bagels")
+    ids = [x["id"] for x in ev["slots"]][:2]
+    pks = c.post(f"/api/events/{ev['id']}/packages", json={"name": "Finish line", "slot_ids": ids, "discount_pct": 8}).json()
+    mine = next(p for p in pks if p["name"] == "Finish line")
+    assert mine["discount_pct"] == 8
+    assert c.post(f"/api/events/{ev['id']}/packages", json={"name": "Too big", "slot_ids": ids, "discount_pct": 80}).status_code == 400
+    other = event("Late noodle night")["slots"][0]["id"]
+    assert c.post(f"/api/events/{ev['id']}/packages", json={"name": "Mixed", "slot_ids": [ids[0], other]}).status_code == 400
+    pks = c.put(f"/api/packages/{mine['id']}", json={"name": "Finish line plus", "slot_ids": ids, "discount_pct": 10}).json()
+    assert any(p["name"] == "Finish line plus" for p in pks)
+    pks = c.delete(f"/api/packages/{mine['id']}").json()
+    assert not any(p["id"] == mine["id"] for p in pks)

@@ -235,6 +235,7 @@ function cover(ev, big) {
 }
 const FAVS = new Set(store.get("fav", []));
 const HEART = '<svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7.5-4.6-9.6-9.4C.9 8.2 2.9 4.5 6.6 4.5c2 0 3.5 1 4.4 2.5.9-1.5 2.4-2.5 4.4-2.5 3.7 0 5.7 3.7 4.2 7.1C19.5 16.4 12 21 12 21z"/></svg>';
+async function go(role, tab) { S.role = role; S.tab[role] = tab; store.set("role", S.role); store.set("tab", S.tab); await render(); }
 const kindName = k => ((S.meta && S.meta.kinds) || {})[k] || "Event";
 const roughly = n => n >= 100 ? `over ${Math.floor(n / 50) * 50}` : String(n);
 const listCap = t => t ? t.charAt(0).toUpperCase() + t.slice(1) : t;
@@ -301,11 +302,51 @@ function placementMock(type, sp, ev) {
   };
   return M[type] || M.menu;
 }
+function selection(ev) {
+  const open = ev.slots.filter(s => s.status === "open");
+  S.sel = (S.sel || []).filter(id => open.some(s => s.id === id));
+  const pk = S.pkgSel ? ev.packages.find(p => p.id === S.pkgSel && p.available) : null;
+  if (!pk) S.pkgSel = null;
+  const slots = open.filter(s => S.sel.includes(s.id));
+  const list = slots.reduce((a, s) => a + s.price, 0);
+  const pct = pk ? pk.discount_pct : (slots.length >= (ev.bundle_min || 3) ? (ev.bundle_discount_pct || 0) : 0);
+  const discount = Math.round(list * pct) / 100;
+  return { pk, slots, list, pct, discount, price: list - discount };
+}
+const UNITS = { menu: g => `Every menu, ${g} guests`, drink: g => `${g} drinks, one per guest`, gift: g => `${g} gifts, one per guest`,
+  table: g => `Every table, ${g} place settings`, display: () => "On screen at arrival and between courses", title: () => "Every invitation, plus the welcome" };
+const units = (type, guests) => (UNITS[type] || (() => ""))(guests);
 function eventDetail(r) {
   const ev = r.event, open = ev.slots.filter(s => s.status === "open");
-  if (!open.some(s => s.id === S.pickSlot)) S.pickSlot = (open.find(s => r.matching_slot_ids.includes(s.id)) || open[0]).id;
-  const pick = open.find(s => s.id === S.pickSlot);
+  if (S.sel === undefined || S.selEv !== ev.id) {
+    S.selEv = ev.id; S.pkgSel = null;
+    S.sel = [(open.find(s => r.matching_slot_ids.includes(s.id)) || open[0]).id];
+  }
+  const q = selection(ev), sp = sponsor();
   document.body.classList.add("in-detail");
+  const pkgCard = p => `<article class="pkgcard ${S.pkgSel === p.id ? "on" : ""} ${p.available ? "" : "off"} tier-${esc(p.tier)}">
+      <div class="pk-top"><h3>${esc(p.name)}</h3>${p.discount_pct ? `<span class="pk-save">Save ${p.discount_pct}%</span>` : ""}</div>
+      <p class="sub">${esc(p.description || "")}</p>
+      <p class="pk-price"><b class="num">${money(p.price)}</b>${p.discount ? ` <s class="num">${money(p.list_total)}</s>` : ""}</p>
+      <ul class="pk-list">${p.slots.map(s => `<li>${IC.ok}<span><b>${esc(s.title)}</b><br><small>${esc(units(s.type, ev.guests))}</small></span></li>`).join("")}</ul>
+      ${p.available ? `<button class="btn ${S.pkgSel === p.id ? "primary" : ""} block" data-act="pick-package" data-pk="${p.id}">${S.pkgSel === p.id ? "Selected" : "Choose " + esc(p.name.toLowerCase())}</button>`
+        : `<p class="sub">Not available: ${esc(p.unavailable.join(", ") || "some placements were removed")} already sold.</p>`}
+    </article>`;
+  const summary = q.slots.length === 0 ? `<p class="sub">Pick one or more placements, or choose a package.</p>`
+    : q.slots.length === 1 && !q.pk ? `
+      <div class="mockwrap"><p class="mock-label">Illustrative preview of ${esc(sp.name)}</p>${placementMock(q.slots[0].type, sp, ev)}</div>
+      <p><b class="price num">${money(q.slots[0].price)}</b> <span class="sub">for ${esc(q.slots[0].title.toLowerCase())}</span></p>
+      <button class="btn primary block" data-act="buy" data-slot="${q.slots[0].id}" data-ev="${ev.id}">Buy slot</button>
+      <button class="btn block" data-act="bid" data-slot="${q.slots[0].id}" data-ev="${ev.id}">Place bid</button>
+      ${ev.bundle_discount_pct ? `<p class="sub center tag-note">Add ${Math.max(1, (ev.bundle_min || 3) - 1)} more to save ${ev.bundle_discount_pct}%.</p>` : ""}`
+    : `
+      <p class="mock-label">${esc(q.pk ? q.pk.name : "Your custom package")}</p>
+      <ul class="sum-list">${q.slots.map(s => `<li><span>${esc(s.title)}</span><b class="num">${money(s.price)}</b></li>`).join("")}
+        ${q.discount ? `<li class="disc"><span>${q.pk ? "Package" : "Bundle"} discount, ${q.pct}%</span><b class="num">−${money(q.discount)}</b></li>` : ""}
+        <li class="tot"><span>Total</span><b class="num">${money(q.price)}</b></li></ul>
+      ${!q.pk && !q.discount && ev.bundle_discount_pct ? `<p class="sub tag-note">Pick ${(ev.bundle_min || 3)} or more to save ${ev.bundle_discount_pct}%.</p>` : ""}
+      <button class="btn primary block" data-act="review-deal" data-ev="${ev.id}">Review package</button>
+      <p class="sub center tag-note">One agreement and one payment. Each placement is verified on its own.</p>`;
   return `<p class="read"><button class="link-btn" data-act="back">Back to results</button></p>
   <h1>${esc(ev.title)}</h1>
   <div class="gallery">${cover(ev, true)}</div>
@@ -316,25 +357,23 @@ function eventDetail(r) {
       <p class="desc">${esc(ev.description)}</p>
       <div class="reasons">${r.reasons.map(x => `<span>${esc(x)}</span>`).join("")}</div>
       ${breakdownHTML(r.breakdown, `Why this matches: ${r.score}%`)}
+      ${ev.packages.length ? `<hr class="rule"><h2>Sponsorship packages</h2><p class="sub" style="margin-top:4px">Set by ${esc(ev.host_name)}. Compare what each includes.</p>
+      <div class="pkgs">${ev.packages.map(pkgCard).join("")}</div>` : ""}
+      <hr class="rule">
+      <h2>Build your own</h2><p class="sub" style="margin-top:4px">Pick any mix of placements. ${ev.bundle_discount_pct ? `${ev.bundle_min || 3} or more save ${ev.bundle_discount_pct}%.` : ""} One placement can also be bid on.</p>
+      <div class="offers" role="group" aria-label="Choose placements">${open.map(s => `<label class="offer ${S.sel.includes(s.id) ? "on" : ""} ${r.matching_slot_ids.includes(s.id) ? "" : "dim"}">
+        <input type="checkbox" value="${s.id}" data-act-change="toggle-slot" ${S.sel.includes(s.id) ? "checked" : ""}>
+        <span><b>${esc(s.title)}</b><br><span class="sub">${esc(s.specs)} ${esc(units(s.type, ev.guests))}. Proof: ${plural(s.photos_required, "photo")}.</span></span>
+        <b class="num">${money(s.price)}</b></label>`).join("")}</div>
+      ${ev.slots.length > open.length ? `<p class="sub" style="margin-top:8px">${plural(ev.slots.length - open.length, "placement")} already taken.</p>` : ""}
       <hr class="rule">
       <h2>How payment works</h2>
-      <ol class="steps"><li>You pay Tablematch when you buy a slot. The host does not get the money yet.</li>
-        <li>After the dinner, the host uploads photos of your placement. Each slot below says how many it needs.</li>
-        <li>Once the photos pass the check, Tablematch pays the host. Our fee comes out of the host's payout, not out of your price.</li>
-        <li>If the placement is not verified, the platform can refund you.</li></ol>
-      <hr class="rule">
-      <h2>Slots you can sponsor</h2>
-      <div class="offers" role="radiogroup" aria-label="Choose a slot">${open.map(s => `<label class="offer ${s.id === S.pickSlot ? "on" : ""} ${r.matching_slot_ids.includes(s.id) ? "" : "dim"}">
-        <input type="radio" name="slot" value="${s.id}" data-act-change="pick" ${s.id === S.pickSlot ? "checked" : ""}>
-        <span><b>${esc(s.title)}</b><br><span class="sub">${esc(s.specs)} Proof: ${plural(s.photos_required, "photo")}.</span></span>
-        <b class="num">${money(s.price)}</b></label>`).join("")}</div>
+      <ol class="steps"><li>You pay Tablematch once, for one slot or a whole package. The host does not get the money yet.</li>
+        <li>After the event, the host uploads proof for each placement separately.</li>
+        <li>Each placement that passes is paid out to the host. Our fee comes out of the host's payout, not out of your price.</li>
+        <li>A placement that is not verified can be refunded on its own.</li></ol>
     </div>
-    <aside class="reserve" aria-label="Sponsor this event">
-      <div class="mockwrap"><p class="mock-label">Preview: how ${esc(sponsor().name)} would appear</p>${placementMock(pick.type, sponsor(), ev)}</div>
-      <p><b class="price num">${money(pick.price)}</b> <span class="sub">for ${esc(pick.title.toLowerCase())}</span></p>
-      <button class="btn primary block" data-act="buy" data-slot="${pick.id}" data-ev="${ev.id}">Buy slot</button>
-      <button class="btn block" data-act="bid" data-slot="${pick.id}" data-ev="${ev.id}">Place bid</button>
-      <p class="sub center tag-note">Your payment is held until the host proves your placement.</p>
+    <aside class="reserve" aria-label="Sponsor this event">${summary}
       <p class="sub center tag-note">${ev.density.sponsors} of ${ev.density.max_sponsors} sponsor spots taken. One brand per category.</p>
     </aside>
   </div>`;
@@ -358,32 +397,129 @@ async function sponsorFind() {
   <div id="results">${sponsorResults()}</div>`;
 }
 
+// My deals: one card per transaction (a package or a single slot), each placement tracked on its own.
+function groupDeals(orders, deals) {
+  const byDeal = Object.fromEntries(deals.map(d => [d.id, d]));
+  const groups = [];
+  const seen = {};
+  for (const o of orders) {
+    if (o.deal_id && byDeal[o.deal_id]) {
+      if (!seen[o.deal_id]) { seen[o.deal_id] = { key: "d" + o.deal_id, deal: byDeal[o.deal_id], orders: [] }; groups.push(seen[o.deal_id]); }
+      seen[o.deal_id].orders.push(o);
+    } else groups.push({ key: "o" + o.id, deal: null, orders: [o] });
+  }
+  return groups;
+}
+function dealStage(g) {
+  const live = g.orders.filter(o => o.status !== "refunded");
+  if (!live.length) return ["cancelled", "Cancelled or refunded"];
+  if (live.every(o => o.status === "released")) return ["done", "Completed"];
+  if (live.some(o => o.status === "awaiting_payment")) return ["pay", "Awaiting payment"];
+  const past = g.orders[0].event.date < new Date().toISOString().slice(0, 10);
+  if (live.some(o => o.latest_proof) || past) return ["after", "After the event: proof and verification"];
+  return ["before", "Before the event"];
+}
+const DELIV = { awaiting_payment: "Not paid yet", in_escrow: "Waiting for proof", under_review: "Proof being reviewed",
+  ready_for_payout: "Verified", released: "Verified and paid out", refunded: "Refunded" };
+function delivStatus(o) {
+  if (o.status === "in_escrow" && o.latest_proof) return ["resubmit", "Needs new proof"];
+  return [o.status, DELIV[o.status] || o.status_label];
+}
+function dealCard(g, sp) {
+  const o0 = g.orders[0], ev = o0.event, live = g.orders.filter(o => o.status !== "refunded");
+  const [stage, stageLabel] = dealStage(g);
+  const price = g.deal ? g.deal.price : o0.price;
+  const name = g.deal ? g.deal.name : o0.slot.title;
+  const verified = live.filter(o => ["ready_for_payout", "released"].includes(o.status)).length;
+  const paidOut = live.filter(o => o.status === "released").reduce((a, o) => a + (o.net || 0), 0);
+  const steps = [["before", "Booked"], ["after", "Event and proof"], ["done", "Completed"]];
+  const idx = { pay: 0, before: 0, after: 1, done: 2, cancelled: -1 }[stage];
+  const photos = live.flatMap(o => (o.latest_proof && o.latest_proof.decision !== "rejected" ? o.latest_proof.photos : []).map(u => ({ u, o })));
+  return `<article class="deal stage-${stage}">
+    <header class="deal-head">
+      <div class="deal-cover">${cover(ev, true)}</div>
+      <div class="deal-info">
+        <span class="eyebrow-tag">${esc(stageLabel)}</span>
+        <h2>${esc(ev.title)}</h2>
+        <p class="sub">${esc(kindName(ev.kind))} by ${esc(o0.club.name)}, hosted by ${esc(o0.club.host_name)}</p>
+        <div class="meta"><span>${fmtDate(ev.date)}</span><span>${esc(ev.neighborhood)}${ev.borough ? ", " + esc(ev.borough) : ""}</span><span>${ev.guests} guests expected</span></div>
+        <ol class="stages">${steps.map(([k, t], i) => `<li class="${i < idx || stage === "done" ? "done" : i === idx ? "now" : ""}">${t}</li>`).join("")}</ol>
+      </div>
+      <div class="deal-money">
+        <small>${esc(name)}</small>
+        <b class="num">${money(price)}</b>
+        ${g.deal && g.deal.discount ? `<span class="sub">Saved ${money(g.deal.discount)} on ${money(g.deal.list_total)}</span>` : ""}
+        <span class="sub">${plural(live.length, "placement")}, ${verified} verified</span>
+        ${stage === "pay" ? (g.deal
+          ? `<span class="acts"><button class="btn primary small" data-act="pay-deal" data-id="${g.deal.id}">Pay ${money(price)}</button><button class="btn small" data-act="cancel-deal" data-id="${g.deal.id}">Cancel</button></span>`
+          : `<span class="acts"><button class="btn primary small" data-act="pay" data-id="${o0.id}">Pay ${money(price)}</button><button class="btn small" data-act="cancel" data-id="${o0.id}">Cancel</button></span>`)
+          : stage === "done" ? `<span class="sub">Host paid ${money(paidOut)} after fees</span>` : `<span class="sub">Held in escrow by Tablematch</span>`}
+      </div>
+    </header>
+    <section class="deliverables" aria-label="Deliverables">
+      <h3>What you bought</h3>
+      ${g.orders.map(o => {
+        const [st, stLabel] = delivStatus(o);
+        const p = o.latest_proof;
+        return `<div class="deliv">
+          <div class="deliv-mock"><span class="prev-tag">Illustrative preview</span>${placementMock(o.slot.type, Object.assign({}, sp, o.sponsor), Object.assign({ club_name: o.club.name }, ev))}</div>
+          <div class="deliv-body">
+            <div class="deliv-top"><h4>${esc(o.slot.title)}</h4><span class="dstat ds-${st}">${esc(stLabel)}</span></div>
+            <p class="sub">${esc(o.slot.specs)}</p>
+            <dl class="deliv-facts"><div><dt>Covers</dt><dd>${esc(units(o.slot.type, ev.guests))}</dd></div><div><dt>Delivered</dt><dd>${fmtDate(ev.date)}</dd></div>
+              <div><dt>Proof needed</dt><dd>${plural(o.slot.photos_required, "photo")}</dd></div><div><dt>Price</dt><dd class="num">${money(o.price)}</dd></div></dl>
+            ${tracker(o)}
+            ${o.status === "in_escrow" && p ? `<p class="note bad">The last photos did not pass. The host has been asked to retake them, and this part of your money stays held.</p>` : ""}
+            ${o.status === "ready_for_payout" && !o.signoff ? `<div class="note signoff"><b>Verified.</b> Confirm it looks right, or dispute it. It confirms itself after 72 hours.
+              <span class="acts" style="margin-top:8px"><button class="btn primary small" data-act="signoff" data-id="${o.id}" data-d="confirm">Confirm placement</button><button class="btn small" data-act="signoff" data-id="${o.id}" data-d="dispute">Dispute</button></span></div>` : ""}
+            ${o.signoff ? `<p class="sub">${o.signoff === "confirmed" ? "You confirmed this placement." : "You disputed this placement. Tablematch is reviewing it."}</p>` : ""}
+            ${p ? `<details><summary>Proof from the host (${plural(p.photos.length, "photo")})</summary>${proofBlock(o)}</details>` : ""}
+          </div></div>`;
+      }).join("")}
+    </section>
+    ${photos.length ? `<section class="gallery-proof"><h3>Proof gallery</h3><p class="sub">Photos the host uploaded, labeled by placement. These are the actual evidence.</p>
+      <div class="pg">${photos.map(({ u, o }) => `<figure><a href="${esc(u)}" target="_blank" rel="noopener"><img src="${esc(u)}" alt="Proof for ${esc(o.slot.title)}" loading="lazy"></a><figcaption>${esc(o.slot.title)} <span class="dstat ds-${delivStatus(o)[0]}">${esc(delivStatus(o)[1])}</span></figcaption></figure>`).join("")}</div></section>` : ""}
+    <footer class="deal-foot">
+      ${verified ? `<button class="btn small" data-act="report" data-key="${esc(g.key)}">Download sponsorship report</button>` : ""}
+      ${stage === "done" ? `<button class="btn primary small" data-act="book-again" data-club="${o0.club.id}" data-ev="${ev.id}">Book ${esc(o0.club.name)} again</button>` : ""}
+    </footer>
+  </article>`;
+}
+function openReport(key) {
+  const g = (S.dealGroups || []).find(x => x.key === key || x.key === String(key));
+  if (!g) return;
+  const sp = sponsor(), o0 = g.orders[0], ev = o0.event;
+  const rows = g.orders.filter(o => ["ready_for_payout", "released"].includes(o.status));
+  const w = window.open("", "_blank");
+  if (!w) return toast("Allow pop-ups to open the report.", true);
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Sponsorship report: ${esc(ev.title)}</title>
+    <style>body{font-family:Manrope,system-ui,sans-serif;color:#1e2a23;max-width:860px;margin:32px auto;padding:0 24px}h1{font-family:Georgia,serif;font-weight:400}
+    .p{border-top:1px solid #ddd;padding:16px 0}.imgs{display:flex;gap:8px;flex-wrap:wrap}.imgs img{height:160px;border-radius:8px}small{color:#5f6b63}
+    button{margin:16px 0;padding:10px 16px;border-radius:10px;border:1px solid #263f33;background:#263f33;color:#fff;font:inherit}@media print{button{display:none}}</style></head><body>
+    <button onclick="print()">Save as PDF</button>
+    <small>Tablematch sponsorship report</small><h1>${esc(sp.name)} at ${esc(ev.title)}</h1>
+    <p>${esc(o0.club.name)}, ${fmtDate(ev.date)}, ${esc(ev.neighborhood)}. ${ev.guests} guests expected. ${esc(g.deal ? g.deal.name : o0.slot.title)}, ${money(g.deal ? g.deal.price : o0.price)}.</p>
+    ${rows.map(o => `<div class="p"><b>${esc(o.slot.title)}</b><br><small>${esc(o.slot.specs)} Verified ${o.status === "released" ? "and paid out" : ""}${o.signoff === "confirmed" ? ", confirmed by you" : ""}.</small>
+      <ul>${(o.latest_proof ? o.latest_proof.checks : []).map(c => `<li>${c.ok ? "Passed" : "Flag"}: ${esc(c.label)}</li>`).join("")}</ul>
+      <div class="imgs">${(o.latest_proof ? o.latest_proof.photos : []).map(u => `<img src="${location.origin + u}" alt="">`).join("")}</div></div>`).join("")}
+    <p><small>Only verified placements and their real proof photos are included. Previews are not.</small></p></body></html>`);
+  w.document.close();
+}
 async function sponsorDeals() {
   const sp = sponsor();
-  const [offers, orders] = await Promise.all([api(`/api/offers?sponsor_id=${sp.id}`), api(`/api/orders?sponsor_id=${sp.id}`)]);
+  const [offers, orders, deals] = await Promise.all([api(`/api/offers?sponsor_id=${sp.id}`), api(`/api/orders?sponsor_id=${sp.id}`), api(`/api/deals?sponsor_id=${sp.id}`)]);
   const incoming = offers.filter(o => o.from_side === "host" && o.status === "pending");
   const bids = offers.filter(o => o.from_side === "sponsor");
-  const orderRows = orders.map(o => `<div class="row has-mock">
-      <div class="deal-mock" aria-label="Preview of the placement">${placementMock(o.slot.type, Object.assign({}, sp, o.sponsor), Object.assign({ club_name: o.club.name }, o.event))}</div>
-      <div><h3>${esc(o.slot.title)} at ${esc(o.event.title)}</h3>
-        <p class="sub">${esc(o.club.name)}, ${fmtDate(o.event.date)}. ${esc(o.source === "buy" ? "Bought at list price" : o.source === "bid" ? "Your bid was accepted" : "Host offer you accepted")}.</p>
-        ${tracker(o)}
-        ${o.status === "in_escrow" && !o.latest_proof ? `<p class="note">Your ${money(o.price)} is held by Tablematch. ${esc(o.club.host_name)} will upload photos of your placement.</p>` : ""}
-        ${o.status === "in_escrow" && o.latest_proof ? `<p class="note bad">The photos did not pass. The host has been asked to retake them, and your money stays held.</p>` : ""}
-        ${o.status === "ready_for_payout" && !o.signoff ? `<div class="note signoff"><b>Your placement was verified.</b> Please confirm it looks right, or dispute it. If you do nothing, it confirms itself after 72 hours.
-          <span class="acts" style="margin-top:8px"><button class="btn primary small" data-act="signoff" data-id="${o.id}" data-d="confirm">Confirm placement</button><button class="btn small" data-act="signoff" data-id="${o.id}" data-d="dispute">Dispute</button></span></div>` : ""}
-        ${o.signoff ? `<p class="sub" style="margin-top:6px">${o.signoff === "confirmed" ? "You confirmed this placement." : "You disputed this placement. Tablematch is reviewing it."}</p>` : ""}
-        ${o.latest_proof ? `<details${o.status === "ready_for_payout" && !o.signoff ? " open" : ""}><summary>Proof from the host</summary>${proofBlock(o)}</details>` : ""}
-      </div>
-      <div class="side"><b class="price num">${money(o.price)}</b>${pill(o.status, o.status_label)}
-        ${o.status === "awaiting_payment" ? `<span class="acts"><button class="btn primary small" data-act="pay" data-id="${o.id}">Pay ${money(o.price)}</button><button class="btn small" data-act="cancel" data-id="${o.id}">Cancel</button></span>` : ""}
-      </div></div>`).join("");
-  return `<section class="intro"><h1>My deals</h1><p class="lede">Your money is held by Tablematch until the host proves your placement happened.</p></section>
+  const groups = groupDeals(orders.slice().reverse(), deals);
+  S.dealGroups = groups;
+  const order = { pay: 0, before: 1, after: 2, done: 3, cancelled: 4 };
+  groups.sort((a, b) => order[dealStage(a)[0]] - order[dealStage(b)[0]]);
+  return `<section class="intro"><h1>My deals</h1><p class="lede">What you are sponsoring, how your brand will appear, and proof that each placement happened. Your money stays in escrow until each one is verified.</p></section>
   ${incoming.length ? `<section class="sect"><h2>Offers from hosts</h2><div class="rows">${incoming.map(o => `<div class="row">
       <div><div class="deal-mock inline">${placementMock(o.slot.type, sp, Object.assign({ club_name: o.club.name, neighborhood: "" }, o.event))}</div><h3>${esc(o.club.name)} offers you ${esc(o.slot.title)}</h3><p class="sub">${esc(o.event.title)}, ${fmtDate(o.event.date)}. List price ${money(o.slot.price)}.</p>
       ${o.message ? `<p class="note" style="margin-top:8px">${esc(o.message)}</p>` : ""}</div>
       <div class="side"><b class="price num">${money(o.amount)}</b><span class="acts"><button class="btn primary small" data-act="decide" data-id="${o.id}" data-d="accept">Accept offer</button><button class="btn small" data-act="decide" data-id="${o.id}" data-d="decline">Decline</button></span></div></div>`).join("")}</div></section>` : ""}
-  <section class="sect"><h2>Orders</h2>${orders.length ? `<div class="rows">${orderRows}</div>` : `<div class="empty"><p>No orders yet. Find an event and buy a slot or place a bid.</p><p style="margin-top:12px"><button class="btn primary" data-act="goto" data-role="sponsor" data-tab="find">Find events</button></p></div>`}</section>
+  <section class="sect"><h2>Your sponsorships</h2>${groups.length ? `<div class="deals">${groups.map(g => dealCard(g, sp)).join("")}</div>` : `<div class="empty"><p>No sponsorships yet. Find an event and buy a slot, a package, or place a bid.</p><p style="margin-top:12px"><button class="btn primary" data-act="goto" data-role="sponsor" data-tab="find">Find events</button></p></div>`}</section>
   ${bids.length ? `<section class="sect"><h2>Your bids</h2><div class="rows">${bids.map(o => `<div class="row"><div><h3>${esc(o.slot.title)} at ${esc(o.event.title)}</h3><p class="sub">${esc(o.club.name)}. List price ${money(o.slot.price)}.</p></div><div class="side"><b class="price num">${money(o.amount)}</b>${pill(o.status)}</div></div>`).join("")}</div></section>` : ""}`;
 }
 
@@ -420,7 +556,15 @@ async function hostDinners() {
         <td class="r">${s.status === "open" ? `<input type="number" min="1" step="any" value="${s.price}" aria-label="Price for ${esc(s.title)}" data-act-change="price" data-slot="${s.id}">` : `<span class="num">${money(s.price)}</span>`}</td>
         <td>${pill(s.order_status || s.status, s.order_status ? ({ awaiting_payment: "Awaiting payment", in_escrow: "Sold", under_review: "Sold", ready_for_payout: "Sold", released: "Paid out" })[s.order_status] : s.status === "open" ? "Open" : "Reserved")}</td>
         <td class="r">${s.status === "open" ? `<button class="btn small danger" data-act="del-slot" data-slot="${s.id}">Remove</button>` : ""}</td></tr>`).join("")}
-      </tbody></table></div></article>`;
+      </tbody></table></div>
+      <div class="pkg-admin">
+        <div class="pa-head"><h3>Packages</h3><span class="acts"><button class="btn small" data-act="edit-package" data-ev="${ev.id}">New package</button><button class="btn small" data-act="edit-bundle" data-ev="${ev.id}" data-pct="${ev.bundle_discount_pct || 0}" data-min="${ev.bundle_min || 3}">Bundle discount: ${ev.bundle_discount_pct || 0}% for ${ev.bundle_min || 3}+</button></span></div>
+        ${ev.packages.length ? `<div class="pa-list">${ev.packages.map(p => `<div class="pa-item ${p.available ? "" : "off"}">
+          <div><b>${esc(p.name)}</b> <span class="sub">${p.slots.map(x => esc(x.title)).join(" + ")}</span></div>
+          <div class="pa-right"><span class="num">${money(p.price)}</span>${p.discount_pct ? `<span class="sub">${p.discount_pct}% off ${money(p.list_total)}</span>` : ""}${p.available ? "" : `<span class="sub">Partly sold</span>`}
+            <button class="link-btn" data-act="edit-package" data-ev="${ev.id}" data-pk="${p.id}">Edit</button><button class="link-btn" data-act="delete-package" data-pk="${p.id}">Delete</button></div></div>`).join("")}</div>`
+          : `<p class="sub">No packages yet. Bundle two or more placements so brands can buy them together.</p>`}
+      </div></article>`;
   }).join("") : `<div class="empty"><p>No dinners yet. Add one to start listing slots.</p><p style="margin-top:12px"><button class="btn primary" data-act="new-event">Add a dinner</button></p></div>`}`;
 }
 
@@ -487,7 +631,7 @@ async function hostInbox() {
     if (o.status === "under_review") body = `<p class="note warn">The photos need a person to look at them. This is in the Tablematch review queue, and your funds stay protected.</p>${proofBlock(o, false)}`;
     if (o.status === "ready_for_payout") body = `<p class="note">Verified. Tablematch is preparing your payout.</p>${proofBlock(o, false)}<div style="margin-top:10px">${ticket(o.estimate, { sponsorLabel: "Sponsor paid", netLabel: "You receive" })}</div>`;
     if (o.status === "released") body = `<div style="margin-top:10px">${ticket({ price: o.price, fee: o.fee, net: o.net, rate: o.estimate.rate, cap: o.estimate.cap, capped: o.fee < o.price * o.estimate.rate - 0.005 }, { stamp: true, netLabel: "You received" })}</div>`;
-    return `<div class="row"><div><h3>${esc(o.slot.title)} for ${esc(o.sponsor.name)}</h3><p class="sub">${esc(o.event.title)}, ${fmtDate(o.event.date)}</p>${tracker(o)}${body}</div>
+    return `<div class="row"><div><h3>${esc(o.slot.title)} for ${esc(o.sponsor.name)}</h3><p class="sub">${esc(o.event.title)}, ${fmtDate(o.event.date)}${o.deal_id ? ". Part of a package: send proof for each placement separately" : ""}</p>${tracker(o)}${body}</div>
       <div class="side"><b class="price num">${money(o.price)}</b>${pill(o.status, o.status_label)}</div></div>`;
   };
   return `<section class="intro"><h1>Inbox</h1><p class="lede">Answer bids, upload proof of placement, and see when you get paid.</p></section>
@@ -527,6 +671,8 @@ function perfHTML(p) {
     ["Funding", "Average funding gap covered", p.avg_gap_covered + "%", `Across ${p.events} dinners`],
     ["Liquidity", "Dinners with offers or deals", v(p.liquidity), "Listings getting relevant interest"],
     ["Trust", "Verified placement rate", v(p.verification_rate), "Of paid deals with photos submitted"],
+    ["Transaction value", "Average sponsorship per transaction", money(p.avg_deal_value), `${p.avg_placements} placements on average`],
+    ["Packages", "Transactions that are packages", v(p.package_share), "Package conversion"],
     ["Retention", "Repeat sponsor rate", v(p.repeat_rate), "Sponsors with more than one deal"],
     ["Guest experience", "Guest satisfaction", "Not collected yet", p.heavy_events.length ? `${p.heavy_events.length} dinners flagged as too commercial` : "No dinners flagged as too commercial"],
   ];
@@ -586,7 +732,7 @@ async function findSlot(slotId, evId) {
 const ACTIONS = {
   async role(el) { S.role = el.dataset.role; store.set("role", S.role); await render(); },
   async tab(el) { S.tab[S.role] = el.dataset.tab; store.set("tab", S.tab); await render(); },
-  async "open-event"(el) { S.openEv = Number(el.dataset.ev); S.pickSlot = null; $("#results").innerHTML = sponsorResults(); window.scrollTo({ top: 0 }); },
+  async "open-event"(el) { S.openEv = Number(el.dataset.ev); S.sel = undefined; S.pkgSel = null; $("#results").innerHTML = sponsorResults(); window.scrollTo({ top: 0 }); },
   async fav(el) {
     const id = Number(el.dataset.ev);
     FAVS.has(id) ? FAVS.delete(id) : FAVS.add(id);
@@ -627,6 +773,76 @@ const ACTIONS = {
     }
     await api(`/api/orders/${el.dataset.id}/signoff`, "POST", { decision: "confirm" });
     toast("Thanks. Placement confirmed."); await render();
+  },
+  async "pick-package"(el) {
+    const ev = S.sfData.results.find(r => r.event.id === S.openEv).event;
+    const pk = ev.packages.find(p => p.id === Number(el.dataset.pk));
+    S.pkgSel = pk.id; S.sel = [...pk.slot_ids]; $("#results").innerHTML = sponsorResults();
+    document.querySelector(".reserve")?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  },
+  async "review-deal"(el) {
+    const ev = S.sfData.results.find(r => r.event.id === Number(el.dataset.ev)).event;
+    const q = await api("/api/quote", "POST", { event_id: ev.id, slot_ids: S.sel, package_id: S.pkgSel });
+    const sp = sponsor();
+    dialog(`<h2>Review your ${esc(q.name.toLowerCase())}</h2>
+      <p class="sub">${esc(ev.title)}, ${fmtDate(ev.date)}, ${esc(ev.neighborhood)}. Hosted by ${esc(ev.host_name)}.</p>
+      <ul class="review-list">${q.slots.map(s => `<li><div class="deal-mock">${placementMock(s.type, sp, ev)}</div><div><b>${esc(s.title)}</b><p class="sub">${esc(s.specs)}</p>
+        <p class="sub">${esc(units(s.type, ev.guests))}. Delivered ${fmtDate(ev.date)}. Proof: ${plural(s.photos_required, "photo")}.</p></div><b class="num">${money(s.price)}</b></li>`).join("")}</ul>
+      <ul class="sum-list">${q.discount ? `<li><span>List total</span><b class="num">${money(q.list_total)}</b></li><li class="disc"><span>Discount, ${q.discount_pct}%</span><b class="num">−${money(q.discount)}</b></li>` : ""}
+        <li class="tot"><span>You pay</span><b class="num">${money(q.price)}</b></li></ul>
+      <p class="sub">Previews are illustrative, not proof. You will pay once into escrow. Each placement is verified separately, and an unverified placement can be refunded.</p>
+      <div class="btns"><button type="button" class="btn" data-act="close">Back</button><button class="btn primary" data-act="confirm-deal" data-ev="${ev.id}">Reserve package</button></div>`);
+  },
+  async "confirm-deal"(el) {
+    const d = await api("/api/deals", "POST", { event_id: Number(el.dataset.ev), slot_ids: S.sel, package_id: S.pkgSel, sponsor_id: sponsor().id });
+    closeDialog(); S.sfData = null; S.sel = undefined; S.pkgSel = null; S.openEv = null;
+    toast(`${d.name} reserved. Pay ${money(d.price)} in My deals to hold it in escrow.`);
+    await go("sponsor", "deals");
+  },
+  async "pay-deal"(el) {
+    const d = await api(`/api/deals/${el.dataset.id}/pay`, "POST");
+    toast(`Paid ${money(d.price)}. It is held in escrow until each placement is verified.`); await render();
+  },
+  async "cancel-deal"(el) {
+    if (!el.dataset.confirmed) {
+      return dialog(`<h2>Cancel this package?</h2><p>All its placements go back on sale. You have not been charged.</p>
+        <div class="btns"><button class="btn" data-act="close">Keep it</button><button class="btn primary" data-act="cancel-deal" data-id="${el.dataset.id}" data-confirmed="1">Cancel package</button></div>`);
+    }
+    closeDialog(); await api(`/api/deals/${el.dataset.id}/cancel`, "POST"); toast("Package cancelled."); await render();
+  },
+  async report(el) { openReport(Number(el.dataset.key)); },
+  async "book-again"(el) {
+    const evs = await api(`/api/events?club_id=${el.dataset.club}`);
+    const next = evs.find(e => e.id !== Number(el.dataset.ev) && e.date >= new Date().toISOString().slice(0, 10) && e.slots.some(s => s.status === "open"));
+    S.sfData = null; S.filters = {}; S.sf = { query: "", budget: "", slot_type: "" };
+    await go("sponsor", "find");
+    if (next) { S.openEv = next.id; $("#results").innerHTML = sponsorResults(); window.scrollTo({ top: 0 }); }
+    else toast("This host has no other open events right now. Here are similar ones.");
+  },
+  async "edit-package"(el) {
+    const evs = await api(`/api/events?club_id=${club().id}`);
+    const ev = evs.find(e => e.id === Number(el.dataset.ev));
+    const pk = el.dataset.pk ? ev.packages.find(p => p.id === Number(el.dataset.pk)) : null;
+    dialog(`<h2>${pk ? "Edit package" : "New package"}</h2><form class="stack" data-form="package" data-ev="${ev.id}" ${pk ? `data-pk="${pk.id}"` : ""}>
+      <label class="field"><span>Name</span><input id="pk-n" value="${esc(pk ? pk.name : "")}" placeholder="For example: Featured sponsor" required></label>
+      <label class="field"><span>Short description <span class="hint">Optional</span></span><input id="pk-d" value="${esc(pk ? pk.description || "" : "")}"></label>
+      <fieldset class="field fs"><legend>Placements in this package</legend><div class="opts">${ev.slots.map(x => `<label><input type="checkbox" name="pk-s" value="${x.id}" ${pk && pk.slot_ids.includes(x.id) ? "checked" : ""}>${esc(x.title)}, ${money(x.price)}${x.status !== "open" ? " (sold)" : ""}</label>`).join("")}</div></fieldset>
+      <label class="field"><span>Package discount (%)</span><input id="pk-p" type="number" min="0" max="50" step="any" value="${pk ? pk.discount_pct : 10}"></label>
+      <div class="btns"><button type="button" class="btn" data-act="close">Cancel</button><button class="btn primary" type="submit">Save package</button></div></form>`);
+  },
+  async "delete-package"(el) {
+    if (!el.dataset.confirmed) {
+      return dialog(`<h2>Delete this package?</h2><p>Brands can still buy the placements on their own. Deals already made are not affected.</p>
+        <div class="btns"><button class="btn" data-act="close">Keep it</button><button class="btn primary" data-act="delete-package" data-pk="${el.dataset.pk}" data-confirmed="1">Delete</button></div>`);
+    }
+    closeDialog(); await api(`/api/packages/${el.dataset.pk}`, "DELETE"); toast("Package deleted."); await render();
+  },
+  async "edit-bundle"(el) {
+    dialog(`<h2>Bundle discount</h2><form class="stack" data-form="bundle" data-ev="${el.dataset.ev}">
+      <p class="sub">Applies when a brand builds its own mix of placements at this event.</p>
+      <div class="two"><label class="field"><span>Discount (%)</span><input id="bd-p" type="number" min="0" max="50" step="any" value="${el.dataset.pct}"></label>
+      <label class="field"><span>For this many placements or more</span><input id="bd-m" type="number" min="2" step="1" value="${el.dataset.min}"></label></div>
+      <div class="btns"><button type="button" class="btn" data-act="close">Cancel</button><button class="btn primary" type="submit">Save</button></div></form>`);
   },
   async back() { S.openEv = null; $("#results").innerHTML = sponsorResults(); },
   async example(el) { S.openEv = null; S.sf.query = el.dataset.text; $("#sf-q").value = el.dataset.text; $("#sf-b").value = ""; S.sf.budget = ""; await submitSponsorSearch(); },
@@ -820,6 +1036,17 @@ const FORMS = {
     await api(`/api/orders/${form.dataset.id}/signoff`, "POST", { decision: "dispute", note: $("#dp-note").value });
     closeDialog(); toast("Dispute sent. The payout is paused while we review."); await render();
   },
+  async package(form) {
+    const body = { name: $("#pk-n").value, description: $("#pk-d").value, discount_pct: Number($("#pk-p").value || 0),
+      slot_ids: [...form.querySelectorAll("input[name=pk-s]:checked")].map(i => Number(i.value)) };
+    if (form.dataset.pk) await api(`/api/packages/${form.dataset.pk}`, "PUT", body);
+    else await api(`/api/events/${form.dataset.ev}/packages`, "POST", body);
+    closeDialog(); toast("Package saved."); S.sfData = null; await render();
+  },
+  async bundle(form) {
+    await api(`/api/events/${form.dataset.ev}/bundle`, "PUT", { bundle_discount_pct: Number($("#bd-p").value || 0), bundle_min: Number($("#bd-m").value || 3) });
+    closeDialog(); toast("Bundle discount saved."); S.sfData = null; await render();
+  },
   async "new-slot"(form) {
     await api(`/api/events/${form.dataset.ev}/slots`, "POST", { type: $("#ns-t").value, price: Number($("#ns-p").value), photos_required: Number($("#ns-n").value), specs: $("#ns-s").value || null });
     closeDialog(); toast("Slot added."); await render();
@@ -889,8 +1116,10 @@ document.addEventListener("change", async e => {
     const fd = new FormData(); fd.append("file", f);
     try { await api(`/api/events/${el.dataset.ev}/cover`, "POST", fd); toast("Cover photo saved."); S.sfData = null; await render(); }
     catch (err) { toast(err.message, true); }
-  } else if (el.dataset.actChange === "pick") {
-    S.pickSlot = Number(el.value); $("#results").innerHTML = sponsorResults();
+  } else if (el.dataset.actChange === "toggle-slot") {
+    const id = Number(el.value); S.pkgSel = null;
+    S.sel = el.checked ? [...new Set([...(S.sel || []), id])] : (S.sel || []).filter(x => x !== id);
+    $("#results").innerHTML = sponsorResults();
   } else if (el.dataset.actChange === "price") {
     try { await api(`/api/slots/${el.dataset.slot}`, "PATCH", { price: Number(el.value) }); toast("Price updated."); }
     catch (err) { toast(err.message, true); }

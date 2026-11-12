@@ -222,7 +222,7 @@ EVENT_PROFILE = {
     "Mugs and mezcal: a pottery night": ("workshop", ["art", "design"], "30-39", 55, 2, ["spirits", "snacks"], []),
     "Around Astoria in five plates": ("potluck", ["food culture", "family", "travel"], "30-39", 35, 3, ["condiments", "beverages", "snacks"], ["spirits"]),
 }
-DATA_VERSION = "3"
+DATA_VERSION = "4"
 
 
 NOW = lambda: datetime.now().isoformat(timespec="seconds")
@@ -248,6 +248,7 @@ def seed():
             name, specs = SLOT_TYPES[t]
             slot_ids[(i, t)] = db.insert("slots", event_id=eid, type=t, title=name, specs=specs,
                                          price=price, photos_required=photos, status="open")
+        default_packages(eid, db.q("SELECT * FROM slots WHERE event_id=?", (eid,)))
 
     db.set_setting("data_version", DATA_VERSION)
     s = db.get_settings()
@@ -271,11 +272,36 @@ def seed():
               status="pending", created=NOW())
 
 
+TIER_INFO = {
+    "supporting": ("Supporting sponsor", "Two light-touch placements that put your name in front of every guest.", 0),
+    "featured": ("Featured sponsor", "Your product in guests' hands, plus your name on the night.", 10),
+    "presenting": ("Presenting sponsor", "The headline package: your name on the event and the best placements.", 15),
+}
+
+
+def default_packages(event_id, slots):
+    """Three starter packages per event, built from its own slots. Hosts can edit or delete them."""
+    by = {s["type"]: s for s in slots}
+    cheap = sorted(slots, key=lambda s: s["price"])
+    plans = {
+        "supporting": [t for t in ("menu", "display") if t in by] or [s["type"] for s in cheap[:2]],
+        "featured": [t for t in ("drink", "gift", "menu") if t in by],
+        "presenting": (["title"] if "title" in by else []) + [t for t in ("drink", "table", "display", "menu") if t in by],
+    }
+    for tier, types in plans.items():
+        types = list(dict.fromkeys(types))[:4 if tier == "presenting" else 3]
+        if len(types) < 2:
+            continue
+        name, desc, disc = TIER_INFO[tier]
+        db.insert("packages", event_id=event_id, name=name, tier=tier, description=desc,
+                  slot_ids=[by[t]["id"] for t in types], discount_pct=disc, active=1, created=NOW())
+
+
 def _profile(title, guests, need):
     fmt, interests, age, ticket, cap, pref, excl = EVENT_PROFILE[title]
     # total cost is set so that cost minus ticket revenue equals the original funding gap
     kind, interested = EVENT_KIND.get(title, ("dinner", 0))
-    return dict(kind=kind, interested=interested, format=fmt, interests=interests, age_group=age, ticket_price=ticket,
+    return dict(kind=kind, interested=interested, bundle_discount_pct=5, bundle_min=3, format=fmt, interests=interests, age_group=age, ticket_price=ticket,
                 total_cost=need + guests * ticket, max_sponsors=cap, preferred_cats=pref, excluded_cats=excl)
 
 
