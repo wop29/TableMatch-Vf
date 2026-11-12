@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Placecard prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body data-role="sponsor">
+<a class="skip" href="#app">Skip to content</a>
+<header class="top">
+  <div class="top-inner">
+    <a class="mark" href="/" aria-label="Placecard home">
+      <svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true"><path d="M3 21 L7 7 H19 L23 21 Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M5 15 H21" stroke="currentColor" stroke-width="2" stroke-dasharray="2 3"/></svg>
+      <span>Placecard</span>
+    </a>
+    <div class="who">
+      <div class="seg" role="group" aria-label="Choose a side of the marketplace" id="roles"></div>
+      <label class="persona"><span id="persona-label">Acting as</span>
+        <select id="persona"></select></label>
+    </div>
+  </div>
+  <nav class="tabs" id="tabs" aria-label="Sections"></nav>
+</header>
+<main id="app" tabindex="-1"><p class="loading">Loading the demo marketplace</p></main>
+<footer class="foot">
+  <span>Prototype with fictional sponsors, supper clubs and simulated payments.</span>
+  <button class="link" data-act="reset">Reset demo data</button>
+</footer>
+<dialog id="dlg"></dialog>
+<div id="toasts" role="status" aria-live="polite"></div>
+<script src="/static/app.js"></script>
+</body>
+</html>

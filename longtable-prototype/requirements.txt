@@ -1,0 +1,6 @@
+fastapi>=0.110
+uvicorn>=0.29
+python-multipart>=0.0.9
+pillow>=10.1
+# Optional: lets AI read the placement photos instead of the demo verifier
+anthropic>=0.40
