@@ -1,5 +1,6 @@
 """Tablematch prototype API. Run with:  python run.py"""
 import io
+import re
 from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import List, Optional
@@ -135,7 +136,7 @@ def meta():
             "clubs": db.q("SELECT * FROM clubs ORDER BY name"),
             "settings": db.get_settings(), "verify_mode": verify.mode(),
             "slot_types": {k: v[0] for k, v in seed.SLOT_TYPES.items()},
-            "categories": seed.CATEGORIES, "formats": seed.FORMATS, "interests": seed.INTERESTS,
+            "categories": seed.CATEGORIES, "formats": seed.FORMATS, "kinds": seed.KINDS, "interests": seed.INTERESTS,
             "age_groups": seed.AGE_GROUPS, "vibes": list(matching.VIBES), "audiences": list(matching.AUDIENCES),
             "weights": matching.WEIGHTS}
 
@@ -487,7 +488,8 @@ def cancel(order_id: int):
 
 
 @app.post("/api/orders/{order_id}/proof")
-async def upload_proof(order_id: int, files: List[UploadFile] = File(default=[]), scenario: str = Form("")):
+async def upload_proof(order_id: int, files: List[UploadFile] = File(default=[]), scenario: str = Form(""),
+                       links: str = Form(""), checkins: str = Form("")):
     o = _order(order_id, "in_escrow")
     slot = get_or_404("slots", o["slot_id"])
     ev = get_or_404("events", slot["event_id"])
@@ -519,6 +521,25 @@ async def upload_proof(order_id: int, files: List[UploadFile] = File(default=[])
 
     result = verify.verify(images, raw, slot, sp, ev, settings, scenario or None)
 
+    # extra evidence beyond photos: links to posts that tag the brand, and the guest check-in count
+    link_list = [u.strip() for u in re.split(r"[\s,]+", links or "") if u.strip()]
+    bad = [u for u in link_list if not re.match(r"^https?://[^\s/]+\.[^\s]+", u)]
+    if bad:
+        raise HTTPException(400, f"These do not look like web links: {', '.join(bad[:3])}")
+    n_checkins = None
+    if str(checkins).strip():
+        try:
+            n_checkins = int(float(checkins))
+        except ValueError:
+            raise HTTPException(400, "Check-ins must be a number.")
+        if n_checkins < 0:
+            raise HTTPException(400, "Check-ins cannot be negative.")
+    if link_list:
+        result["checks"].append({"label": f"{len(link_list)} social post link(s) submitted as extra proof", "ok": True})
+    if n_checkins is not None:
+        share = n_checkins / max(ev["guests"], 1)
+        result["checks"].append({"label": f"{n_checkins} of {ev['guests']} expected guests checked in", "ok": share >= 0.5})
+
     folder = db.UPLOADS / str(order_id)
     folder.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%H%M%S")
@@ -531,7 +552,7 @@ async def upload_proof(order_id: int, files: List[UploadFile] = File(default=[])
 
     db.insert("proofs", order_id=order_id, created=now(), mode=result["mode"], decision=result["decision"],
               confidence=result["confidence"], checks=result["checks"], notes=result["notes"],
-              photos=urls, ai_cost=result["ai_cost"], reviewer_note="")
+              photos=urls, ai_cost=result["ai_cost"], reviewer_note="", links=link_list, checkins=n_checkins)
     if result["ai_cost"]:
         ledger(order_id, "ai_check", result["ai_cost"], f"Photo check on {len(raw)} photo(s)")
     if result["decision"] == "verified":
@@ -540,6 +561,27 @@ async def upload_proof(order_id: int, files: List[UploadFile] = File(default=[])
         db.update("orders", order_id, status="under_review", note="Waiting for a platform reviewer")
     else:
         db.update("orders", order_id, note="Photos were rejected: " + result["notes"])
+    return order_view(get_or_404("orders", order_id))
+
+
+class Signoff(BaseModel):
+    decision: str  # confirm | dispute
+    note: str = ""
+
+
+@app.post("/api/orders/{order_id}/signoff")
+def sponsor_signoff(order_id: int, body: Signoff):
+    """The sponsor confirms the placement, or disputes it. A dispute pauses the payout and goes to review."""
+    o = _order(order_id, "ready_for_payout", "under_review", "released")
+    if body.decision == "confirm":
+        db.update("orders", order_id, signoff="confirmed")
+    elif body.decision == "dispute":
+        if o["status"] == "released":
+            raise HTTPException(409, "This placement is already paid out. Contact the platform to raise a dispute.")
+        db.update("orders", order_id, signoff="disputed", status="under_review",
+                  note="Sponsor disputed the placement: " + (body.note or "no reason given"))
+    else:
+        raise HTTPException(400, "Decision must be confirm or dispute.")
     return order_view(get_or_404("orders", order_id))
 
 

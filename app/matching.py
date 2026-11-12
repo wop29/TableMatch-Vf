@@ -65,10 +65,11 @@ INTEREST_WORDS = {
 PLACES = {
     "Williamsburg": ["williamsburg"], "Bushwick": ["bushwick"], "Park Slope": ["park slope"],
     "DUMBO": ["dumbo"], "Harlem": ["harlem"], "Astoria": ["astoria"],
+    "Lower East Side": ["lower east side", "les"],
 }
 BOROUGHS = {
     "brooklyn": ["Williamsburg", "Bushwick", "Park Slope", "DUMBO"],
-    "manhattan": ["Harlem"],
+    "manhattan": ["Harlem", "Lower East Side"],
     "queens": ["Astoria"],
 }
 SLOT_WORDS = {
@@ -149,6 +150,8 @@ def _passes_filters(ev, f):
     if f.get("audience") and f["audience"] not in ev["audiences"]:
         return False
     if f.get("interest") and f["interest"] not in (ev.get("interests") or []):
+        return False
+    if f.get("kind") and ev.get("kind") != f["kind"]:
         return False
     if f.get("format") and ev.get("format") != f["format"]:
         return False

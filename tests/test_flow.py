@@ -239,8 +239,8 @@ if __name__ == "__main__":
 def test_seeded_dinners_have_bundled_covers():
     fresh()
     evs = c.get("/api/events").json()
-    assert all(e["cover"] and e["cover"].startswith("/static/covers/") for e in evs)
-    assert c.get(evs[0]["cover"]).status_code == 200
+    assert all(e["cover"] and e["cover"].startswith("/static/covers/") for e in evs if e["kind"] == "dinner")
+    assert c.get(next(e for e in evs if e["cover"])["cover"]).status_code == 200
 
 
 # --- action plan: filters, explained scores, funding, exclusivity, capacity, dashboard ---------
@@ -303,4 +303,31 @@ def test_host_matching_breakdown_and_dashboard():
     assert [x["weight"] for x in r["results"][0]["breakdown"]] == [25, 20, 25, 15, 10, 5]
     assert "Pocketpal" not in [x["sponsor"]["name"] for x in r["results"]]  # finance apps excluded here
     perf = c.get("/api/overview").json()["performance"]
-    assert perf["searches"] >= 1 and perf["deals"] >= 2 and perf["events"] == 9
+    assert perf["searches"] >= 1 and perf["deals"] >= 2 and perf["events"] == 14
+
+
+# --- event types, extra proof and sponsor sign-off --------------------------------------------
+def test_event_types_and_interest_counts():
+    fresh()
+    r = c.post("/api/search/events", json={"query": "", "filters": {"kind": "swap"}}).json()
+    assert [x["event"]["title"] for x in r["results"]] == ["The Ex Files: swap out your ex's stuff"]
+    assert r["results"][0]["event"]["interested"] == 640
+    r = c.post("/api/search/events", json={"query": "creatives on the lower east side"}).json()
+    assert r["results"][0]["event"]["neighborhood"] == "Lower East Side"
+
+
+def test_proof_links_checkins_and_sponsor_signoff():
+    fresh()
+    tide = next(o for o in c.get("/api/orders").json() if o["sponsor"]["name"] == "Tidewell")
+    bad = c.post(f"/api/orders/{tide['id']}/proof", data={"scenario": "good", "links": "not a link"})
+    assert bad.status_code == 400
+    o = c.post(f"/api/orders/{tide['id']}/proof",
+               data={"scenario": "good", "links": "https://example.com/p/1\nhttps://example.com/p/2", "checkins": "28"}).json()
+    assert o["status"] == "ready_for_payout"
+    labels = [x["label"] for x in o["latest_proof"]["checks"]]
+    assert any("2 social post link" in l for l in labels) and any("28 of 32" in l for l in labels)
+    o = c.post(f"/api/orders/{tide['id']}/signoff", json={"decision": "dispute", "note": "Name missing"}).json()
+    assert o["status"] == "under_review" and o["signoff"] == "disputed"
+    o = c.post(f"/api/orders/{tide['id']}/review", json={"decision": "approve"}).json()
+    assert o["status"] == "ready_for_payout"
+    assert c.post(f"/api/orders/{tide['id']}/signoff", json={"decision": "confirm"}).json()["signoff"] == "confirmed"

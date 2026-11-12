@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS events (
   neighborhood TEXT, borough TEXT, guests INTEGER, funding_needed REAL,
   vibes TEXT, audiences TEXT, description TEXT, cover TEXT,
   format TEXT, interests TEXT, age_group TEXT, total_cost REAL, ticket_price REAL, max_sponsors INTEGER,
-  preferred_cats TEXT, excluded_cats TEXT
+  preferred_cats TEXT, excluded_cats TEXT, kind TEXT, interested INTEGER
 );
 CREATE TABLE IF NOT EXISTS slots (
   id INTEGER PRIMARY KEY, event_id INTEGER, type TEXT, title TEXT, specs TEXT,
@@ -38,11 +38,12 @@ CREATE TABLE IF NOT EXISTS offers (
 CREATE TABLE IF NOT EXISTS orders (
   id INTEGER PRIMARY KEY, slot_id INTEGER, sponsor_id INTEGER, offer_id INTEGER,
   source TEXT, price REAL, fee REAL, net REAL, status TEXT, note TEXT,
-  created TEXT, paid_at TEXT, released_at TEXT
+  created TEXT, paid_at TEXT, released_at TEXT, signoff TEXT
 );
 CREATE TABLE IF NOT EXISTS proofs (
   id INTEGER PRIMARY KEY, order_id INTEGER, created TEXT, mode TEXT, decision TEXT,
-  confidence REAL, checks TEXT, notes TEXT, photos TEXT, ai_cost REAL, reviewer_note TEXT
+  confidence REAL, checks TEXT, notes TEXT, photos TEXT, ai_cost REAL, reviewer_note TEXT,
+  links TEXT, checkins INTEGER
 );
 CREATE TABLE IF NOT EXISTS feedback (
   id INTEGER PRIMARY KEY, ts TEXT, role TEXT, rating INTEGER, message TEXT, page TEXT
@@ -54,7 +55,7 @@ CREATE TABLE IF NOT EXISTS ledger (
 """
 
 JSON_FIELDS = {"vibes", "audiences", "places", "checks", "photos", "interests", "age_groups", "engagement",
-               "preferred_cats", "excluded_cats"}
+               "preferred_cats", "excluded_cats", "links"}
 
 
 def conn():
@@ -117,7 +118,9 @@ def init():
         c.executescript(SCHEMA)
         # older databases were created before covers existed
         add = {"events": ["cover TEXT", "format TEXT", "interests TEXT", "age_group TEXT", "total_cost REAL",
-                          "ticket_price REAL", "max_sponsors INTEGER", "preferred_cats TEXT", "excluded_cats TEXT"],
+                          "ticket_price REAL", "max_sponsors INTEGER", "preferred_cats TEXT", "excluded_cats TEXT", "kind TEXT", "interested INTEGER"],
+               "proofs": ["links TEXT", "checkins INTEGER"],
+               "orders": ["signoff TEXT"],
                "sponsors": ["cat TEXT", "interests TEXT", "age_groups TEXT", "engagement TEXT"]}
         for table, defs in add.items():
             cols = [r["name"] for r in c.execute(f"PRAGMA table_info({table})").fetchall()]

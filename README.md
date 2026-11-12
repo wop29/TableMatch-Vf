@@ -92,3 +92,11 @@ The interface follows an Airbnb-inspired brief: white canvas, charcoal text, one
 - **Marketplace performance dashboard** (Platform > Overview): baseline KPIs with no targets set yet.
 
 The weights are starting points to validate with users. They are not tuned results.
+
+## Event types, placement previews and more proof
+
+- **Event types:** besides supper clubs there are swap meets, artist talks, run clubs, listening parties and workshops. Each has an "interested" count. All are fictional and use placeholder photos until the host adds a cover.
+- **"Picked for you":** a banner above the results asks whether the brand wants to sponsor its top match, and gives the interest count.
+- **Placement preview:** a mock of what the sponsor is buying, drawn with the brand's name (menu line, named welcome drink, gift bag, table card, screen, invitation). It appears on the event page and in My deals.
+- **More proof:** hosts can add links to posts and a guest check-in count alongside photos. After verification the sponsor confirms or disputes. A dispute pauses the payout and goes to review. In the real product it would confirm itself after 72 hours.
+- **Price fields:** money fields accept any amount.

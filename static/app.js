@@ -29,8 +29,8 @@ const S = {
 };
 
 const TABS = {
-  sponsor: [["find", "Find dinners"], ["deals", "My deals"]],
-  host: [["dinners", "My dinners"], ["sponsors", "Find sponsors"], ["inbox", "Inbox"]],
+  sponsor: [["find", "Find events"], ["deals", "My deals"]],
+  host: [["dinners", "My events"], ["sponsors", "Find sponsors"], ["inbox", "Inbox"]],
   platform: [["overview", "Overview"], ["review", "Review queue"], ["payouts", "Payouts"], ["fees", "Fees"]],
 };
 const TAB_ICON = {
@@ -112,6 +112,7 @@ function proofBlock(o, withNote = true) {
   return `<div class="proof">
     <div class="photos">${p.photos.map(u => `<a href="${esc(u)}" target="_blank" rel="noopener"><img src="${esc(u)}" alt="Placement photo submitted by the host"></a>`).join("")}</div>
     <ul class="checks">${p.checks.map(c => `<li>${c.ok ? IC.ok : IC.no}<span>${esc(c.label)}</span></li>`).join("")}</ul>
+    ${(p.links || []).length ? `<p class="sub">Post links: ${p.links.map(u => `<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(u.replace(/^https?:\/\//, "").slice(0, 40))}</a>`).join(", ")}</p>` : ""}
     ${withNote ? `<p class="note ${tone}"><b>${who}: ${pill(p.decision, p.decision.replaceAll("_", " "))}</b> ${Math.round(p.confidence * 100)}% confidence. ${esc(p.notes)}${p.reviewer_note ? ` Reviewer: ${esc(p.reviewer_note)}` : ""}</p>` : ""}
   </div>`;
 }
@@ -195,7 +196,7 @@ function breakdownHTML(b, title) {
 function hiddenNote(h) {
   if (!h) return "";
   const bits = [];
-  if (h.filters) bits.push(`${plural(h.filters, "dinner")} outside your filters`);
+  if (h.filters) bits.push(`${plural(h.filters, "event")} outside your filters`);
   if (h.budget) bits.push(`${h.budget} over budget`);
   if (h.category) bits.push(`${h.category} already ${h.category === 1 ? "has" : "have"} a brand in your category`);
   if (h.capacity) bits.push(`${h.capacity} at sponsor capacity`);
@@ -207,6 +208,7 @@ function filterBar() {
   const sel = (key, label, opts) => `<label class="fsel ${f[key] ? "set" : ""}"><span>${label}</span><select data-act-change="filter" data-key="${key}"><option value="">Any</option>${opts.map(([v, t]) => `<option value="${esc(v)}" ${String(f[key] || "") === String(v) ? "selected" : ""}>${esc(t)}</option>`).join("")}</select></label>`;
   const n = Object.values(f).filter(Boolean).length;
   return `<div class="filters" role="group" aria-label="Filters">
+    ${sel("kind", "Type", Object.entries(m.kinds))}
     ${sel("borough", "Borough", [["Brooklyn", "Brooklyn"], ["Manhattan", "Manhattan"], ["Queens", "Queens"]])}
     ${sel("audience", "Guests", m.audiences.map(a => [a, nice(a)]))}
     ${sel("interest", "Interest", m.interests.map(a => [a, a]))}
@@ -216,7 +218,7 @@ function filterBar() {
     ${sel("max_guests", "Size", [["30", "Up to 30 guests"], ["60", "Up to 60 guests"], ["200", "Any size"]])}
     ${sel("within_days", "When", [["14", "Next 2 weeks"], ["30", "Next 30 days"], ["60", "Next 60 days"]])}
     ${n ? `<button type="button" class="link-btn" data-act="clear-filters">Clear ${plural(n, "filter")}</button>` : ""}
-  </div><p class="tag-note filter-note">Filters are must-haves and remove dinners. Your description is a preference and ranks what is left.</p>`;
+  </div><p class="tag-note filter-note">Filters are must-haves and remove events. Your description is a preference and ranks what is left.</p>`;
 }
 function parsedLine(p) {
   const bits = [];
@@ -233,6 +235,8 @@ function cover(ev, big) {
 }
 const FAVS = new Set(store.get("fav", []));
 const HEART = '<svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7.5-4.6-9.6-9.4C.9 8.2 2.9 4.5 6.6 4.5c2 0 3.5 1 4.4 2.5.9-1.5 2.4-2.5 4.4-2.5 3.7 0 5.7 3.7 4.2 7.1C19.5 16.4 12 21 12 21z"/></svg>';
+const kindName = k => ((S.meta && S.meta.kinds) || {})[k] || "Event";
+const roughly = n => n >= 100 ? `over ${Math.floor(n / 50) * 50}` : String(n);
 const listCap = t => t ? t.charAt(0).toUpperCase() + t.slice(1) : t;
 function evCard(r) {
   const ev = r.event, open = ev.slots.filter(s => s.status === "open");
@@ -240,19 +244,32 @@ function evCard(r) {
   const saved = FAVS.has(ev.id);
   return `<article class="lcard"><button class="lcard-btn" data-act="open-event" data-ev="${ev.id}" aria-label="Open ${esc(ev.title)}, ${r.score}% match">
     <div class="lcard-art">${cover(ev)}<span class="tag">${r.score}% match</span></div>
+    <p class="kind">${esc(kindName(ev.kind))}${ev.interested ? ` <span>${ev.interested.toLocaleString("en-US")} interested</span>` : ""}</p>
     <h3>${esc(ev.title)}</h3>
     <p>${esc(ev.club_name)} in ${esc(ev.neighborhood)}, ${esc(ev.borough)}</p>
-    <p>${esc(listCap(ev.vibes.join(", ")))} dinner for ${esc(ev.audiences.join(", "))}</p>
+    <p>${esc(listCap(ev.vibes.map(nice).join(", ")))}, for ${esc(ev.audiences.map(nice).join(", "))}</p>
     <p>${fmtDate(ev.date)}, ${ev.guests} guests</p>
     <p class="lprice"><b class="num">From ${money(from)}</b> per slot, ${plural(open.length, "slot")} open</p>
   </button>
   <button class="heart" type="button" data-act="fav" data-ev="${ev.id}" aria-pressed="${saved}" aria-label="Save ${esc(ev.title)}">${HEART}</button></article>`;
+}
+function pickHTML(list) {
+  if (!list.length) return "";
+  const r = list[0], ev = r.event, sp = sponsor();
+  const q = ev.interested ? `, with ${roughly(ev.interested)} people interested` : "";
+  return `<section class="pick" aria-label="Picked for ${esc(sp.name)}">
+    <div class="pick-art">${cover(ev, true)}</div>
+    <div class="pick-body"><span class="eyebrow-tag">Picked for ${esc(sp.name)}, ${r.score}% match</span>
+      <h2>Does ${esc(sp.name)} want to sponsor ${esc(ev.title)}${esc(q)}?</h2>
+      <p class="sub">${esc(kindName(ev.kind))} in ${esc(ev.neighborhood)}, ${fmtDate(ev.date)}. ${esc(r.reasons.slice(0, 2).join(". "))}.</p>
+      <p style="margin-top:12px"><button class="btn primary" data-act="open-event" data-ev="${ev.id}">See the event</button></p></div></section>`;
 }
 function sortedResults(list) {
   const arr = [...list];
   const minp = r => Math.min(...r.event.slots.filter(s => s.status === "open").map(s => s.price));
   if (S.sort === "soon") arr.sort((a, b) => a.event.date.localeCompare(b.event.date));
   else if (S.sort === "price") arr.sort((a, b) => minp(a) - minp(b));
+  else if (S.sort === "interest") arr.sort((a, b) => (b.event.interested || 0) - (a.event.interested || 0));
   return arr; // "match" keeps the server's ranking untouched
 }
 function sponsorResults() {
@@ -264,9 +281,25 @@ function sponsorResults() {
     if (r) return eventDetail(r);
   }
   if (!d.results.length) return `<div class="rhead"><div><p class="read">${parsedLine(d.parsed)}</p>${hiddenNote(d.hidden)}</div></div><div class="empty"><p>No dinners match just yet. Try broadening your audience or budget.</p><p style="margin-top:12px"><button class="btn primary" data-act="clear-search">Clear search and filters</button></p></div>`;
-  return `<div class="rhead"><div><p class="read"><b>${plural(d.results.length, "dinner")}</b> found</p><p class="read">${parsedLine(d.parsed)}</p>${hiddenNote(d.hidden)}</div>
-    <label class="sort"><span>Sort by</span><select data-act-change="sort" aria-label="Sort dinners"><option value="match" ${S.sort === "match" ? "selected" : ""}>Best match</option><option value="soon" ${S.sort === "soon" ? "selected" : ""}>Soonest</option><option value="price" ${S.sort === "price" ? "selected" : ""}>Lowest price</option></select></label></div>
+  return `<div class="rhead"><div><p class="read"><b>${plural(d.results.length, "event")}</b> found</p><p class="read">${parsedLine(d.parsed)}</p>${hiddenNote(d.hidden)}</div>
+    <label class="sort"><span>Sort by</span><select data-act-change="sort" aria-label="Sort dinners"><option value="match" ${S.sort === "match" ? "selected" : ""}>Best match</option><option value="soon" ${S.sort === "soon" ? "selected" : ""}>Soonest</option><option value="price" ${S.sort === "price" ? "selected" : ""}>Lowest price</option><option value="interest" ${S.sort === "interest" ? "selected" : ""}>Most interested</option></select></label></div>
+    ${pickHTML(d.results)}
     <div class="lgrid">${sortedResults(d.results).map(evCard).join("")}</div>`;
+}
+// A mock of the placement the sponsor is buying, drawn with the brand's name (no real logos).
+function placementMock(type, sp, ev) {
+  ev = Object.assign({ club_name: "", neighborhood: "" }, ev);
+  const name = esc(sp.name), col = esc(sp.color || "#263f33"), title = esc(ev.title);
+  const word = `<span class="mk-word" style="color:${col}">${name}</span>`;
+  const M = {
+    menu: `<div class="mk mk-menu"><small>${esc(ev.club_name)}</small><b>Tonight</b><i></i><i></i><i class="short"></i><div class="mk-foot">Menu supported by ${word}</div></div>`,
+    drink: `<div class="mk mk-drink"><div class="mk-glass" style="--c:${col}"></div><div><small>Welcome drink</small><b>The ${name} Spritz</b><span>Poured for every guest on arrival</span></div></div>`,
+    gift: `<div class="mk mk-gift"><div class="mk-bag" style="--c:${col}"><span>${name}</span></div><div><small>Take-home gift</small><b>A little something from ${name}</b><span>With a printed card in every bag</span></div></div>`,
+    table: `<div class="mk mk-table"><div class="mk-tent"><small>This table is set by</small>${word}</div><div class="mk-plates"><i></i><i></i><i></i></div></div>`,
+    display: `<div class="mk mk-screen" style="--c:${col}"><div class="mk-tv"><small>Welcome to ${title}</small><b>${name}</b></div><span>Shown at arrival and between courses</span></div>`,
+    title: `<div class="mk mk-invite"><small>${name} presents</small><b>${title}</b><span>${fmtDate(ev.date)}, ${esc(ev.neighborhood)}</span><div class="mk-foot">Name on every invitation, plus a two-minute welcome</div></div>`,
+  };
+  return M[type] || M.menu;
 }
 function eventDetail(r) {
   const ev = r.event, open = ev.slots.filter(s => s.status === "open");
@@ -279,7 +312,7 @@ function eventDetail(r) {
   <div class="detail">
     <div>
       <h2>${esc(ev.club_name)}, ${esc(ev.neighborhood)}, ${esc(ev.borough)}</h2>
-      <div class="meta"><span>${fmtDate(ev.date)}</span><span>${ev.guests} guests</span><span>Hosted by ${esc(ev.host_name)}</span></div>
+      <div class="meta"><span>${esc(kindName(ev.kind))}</span><span>${fmtDate(ev.date)}</span><span>${ev.guests} guests</span>${ev.interested ? `<span>${ev.interested.toLocaleString("en-US")} interested</span>` : ""}<span>Hosted by ${esc(ev.host_name)}</span></div>
       <p class="desc">${esc(ev.description)}</p>
       <div class="reasons">${r.reasons.map(x => `<span>${esc(x)}</span>`).join("")}</div>
       ${breakdownHTML(r.breakdown, `Why this matches: ${r.score}%`)}
@@ -296,7 +329,8 @@ function eventDetail(r) {
         <span><b>${esc(s.title)}</b><br><span class="sub">${esc(s.specs)} Proof: ${plural(s.photos_required, "photo")}.</span></span>
         <b class="num">${money(s.price)}</b></label>`).join("")}</div>
     </div>
-    <aside class="reserve" aria-label="Sponsor this dinner">
+    <aside class="reserve" aria-label="Sponsor this event">
+      <div class="mockwrap"><p class="mock-label">Preview: how ${esc(sponsor().name)} would appear</p>${placementMock(pick.type, sponsor(), ev)}</div>
       <p><b class="price num">${money(pick.price)}</b> <span class="sub">for ${esc(pick.title.toLowerCase())}</span></p>
       <button class="btn primary block" data-act="buy" data-slot="${pick.id}" data-ev="${ev.id}">Buy slot</button>
       <button class="btn block" data-act="bid" data-slot="${pick.id}" data-ev="${ev.id}">Place bid</button>
@@ -310,11 +344,11 @@ async function sponsorFind() {
   if (!S.sfData) await runSponsorSearch();
   const types = Object.entries(S.meta.slot_types);
   const chips = ["Hip, trendy Brooklyn creatives.", "Foodies in Queens, up to $800.", "Upscale couples who like live music.", "Young professionals who care about wellness."];
-  return `<section class="intro"><span class="eyebrow-tag">Good brands. Great tables.</span><h1>Find dinners for ${esc(sp.name)}</h1>
-    <p class="lede">Find the dinners where your brand belongs: independent supper clubs whose guests are the people you want to reach.</p></section>
+  return `<section class="intro"><span class="eyebrow-tag">Good brands. Great tables.</span><h1>Find events for ${esc(sp.name)}</h1>
+    <p class="lede">Supper clubs, swap meets, artist talks, run clubs and listening parties whose guests are the people you want to reach.</p></section>
   <form class="pill-search" data-form="sponsor-search" role="search">
     <label class="seg-f grow"><span>Who do you want to reach?</span><input id="sf-q" type="text" placeholder="Hip, trendy Brooklyn creatives." value="${esc(S.sf.query)}"></label>
-    <label class="seg-f"><span>Budget per slot</span><input id="sf-b" type="number" min="0" step="50" inputmode="numeric" placeholder="No limit" value="${esc(S.sf.budget)}"></label>
+    <label class="seg-f"><span>Budget per slot</span><input id="sf-b" type="number" min="0" step="any" inputmode="numeric" placeholder="No limit" value="${esc(S.sf.budget)}"></label>
     <label class="seg-f"><span>Slot type</span><select id="sf-t"><option value="">Any</option>${types.map(([k, v]) => `<option value="${k}" ${S.sf.slot_type === k ? "selected" : ""}>${esc(v)}</option>`).join("")}</select></label>
     <button class="go" type="submit" aria-label="Find my audience"><svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><circle cx="7.5" cy="7.5" r="5.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 12l4.5 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
   </form>
@@ -329,23 +363,27 @@ async function sponsorDeals() {
   const [offers, orders] = await Promise.all([api(`/api/offers?sponsor_id=${sp.id}`), api(`/api/orders?sponsor_id=${sp.id}`)]);
   const incoming = offers.filter(o => o.from_side === "host" && o.status === "pending");
   const bids = offers.filter(o => o.from_side === "sponsor");
-  const orderRows = orders.map(o => `<div class="row">
+  const orderRows = orders.map(o => `<div class="row has-mock">
+      <div class="deal-mock" aria-label="Preview of the placement">${placementMock(o.slot.type, Object.assign({}, sp, o.sponsor), Object.assign({ club_name: o.club.name }, o.event))}</div>
       <div><h3>${esc(o.slot.title)} at ${esc(o.event.title)}</h3>
         <p class="sub">${esc(o.club.name)}, ${fmtDate(o.event.date)}. ${esc(o.source === "buy" ? "Bought at list price" : o.source === "bid" ? "Your bid was accepted" : "Host offer you accepted")}.</p>
         ${tracker(o)}
         ${o.status === "in_escrow" && !o.latest_proof ? `<p class="note">Your ${money(o.price)} is held by Tablematch. ${esc(o.club.host_name)} will upload photos of your placement.</p>` : ""}
         ${o.status === "in_escrow" && o.latest_proof ? `<p class="note bad">The photos did not pass. The host has been asked to retake them, and your money stays held.</p>` : ""}
-        ${o.latest_proof ? `<details><summary>Photos from the host</summary>${proofBlock(o)}</details>` : ""}
+        ${o.status === "ready_for_payout" && !o.signoff ? `<div class="note signoff"><b>Your placement was verified.</b> Please confirm it looks right, or dispute it. If you do nothing, it confirms itself after 72 hours.
+          <span class="acts" style="margin-top:8px"><button class="btn primary small" data-act="signoff" data-id="${o.id}" data-d="confirm">Confirm placement</button><button class="btn small" data-act="signoff" data-id="${o.id}" data-d="dispute">Dispute</button></span></div>` : ""}
+        ${o.signoff ? `<p class="sub" style="margin-top:6px">${o.signoff === "confirmed" ? "You confirmed this placement." : "You disputed this placement. Tablematch is reviewing it."}</p>` : ""}
+        ${o.latest_proof ? `<details${o.status === "ready_for_payout" && !o.signoff ? " open" : ""}><summary>Proof from the host</summary>${proofBlock(o)}</details>` : ""}
       </div>
       <div class="side"><b class="price num">${money(o.price)}</b>${pill(o.status, o.status_label)}
         ${o.status === "awaiting_payment" ? `<span class="acts"><button class="btn primary small" data-act="pay" data-id="${o.id}">Pay ${money(o.price)}</button><button class="btn small" data-act="cancel" data-id="${o.id}">Cancel</button></span>` : ""}
       </div></div>`).join("");
   return `<section class="intro"><h1>My deals</h1><p class="lede">Your money is held by Tablematch until the host proves your placement happened.</p></section>
   ${incoming.length ? `<section class="sect"><h2>Offers from hosts</h2><div class="rows">${incoming.map(o => `<div class="row">
-      <div><h3>${esc(o.club.name)} offers you ${esc(o.slot.title)}</h3><p class="sub">${esc(o.event.title)}, ${fmtDate(o.event.date)}. List price ${money(o.slot.price)}.</p>
+      <div><div class="deal-mock inline">${placementMock(o.slot.type, sp, Object.assign({ club_name: o.club.name, neighborhood: "" }, o.event))}</div><h3>${esc(o.club.name)} offers you ${esc(o.slot.title)}</h3><p class="sub">${esc(o.event.title)}, ${fmtDate(o.event.date)}. List price ${money(o.slot.price)}.</p>
       ${o.message ? `<p class="note" style="margin-top:8px">${esc(o.message)}</p>` : ""}</div>
       <div class="side"><b class="price num">${money(o.amount)}</b><span class="acts"><button class="btn primary small" data-act="decide" data-id="${o.id}" data-d="accept">Accept offer</button><button class="btn small" data-act="decide" data-id="${o.id}" data-d="decline">Decline</button></span></div></div>`).join("")}</div></section>` : ""}
-  <section class="sect"><h2>Orders</h2>${orders.length ? `<div class="rows">${orderRows}</div>` : `<div class="empty"><p>No orders yet. Find a dinner and buy a slot or place a bid.</p><p style="margin-top:12px"><button class="btn primary" data-act="goto" data-role="sponsor" data-tab="find">Find dinners</button></p></div>`}</section>
+  <section class="sect"><h2>Orders</h2>${orders.length ? `<div class="rows">${orderRows}</div>` : `<div class="empty"><p>No orders yet. Find an event and buy a slot or place a bid.</p><p style="margin-top:12px"><button class="btn primary" data-act="goto" data-role="sponsor" data-tab="find">Find events</button></p></div>`}</section>
   ${bids.length ? `<section class="sect"><h2>Your bids</h2><div class="rows">${bids.map(o => `<div class="row"><div><h3>${esc(o.slot.title)} at ${esc(o.event.title)}</h3><p class="sub">${esc(o.club.name)}. List price ${money(o.slot.price)}.</p></div><div class="side"><b class="price num">${money(o.amount)}</b>${pill(o.status)}</div></div>`).join("")}</div></section>` : ""}`;
 }
 
@@ -379,7 +417,7 @@ async function hostDinners() {
       </div>
       <div class="tablewrap" style="margin-top:14px"><table><thead><tr><th>Slot</th><th>What the sponsor gets</th><th class="r">Price</th><th>Status</th><th></th></tr></thead><tbody>
       ${ev.slots.filter(s => !S.hidden.has(s.id)).map(s => `<tr><td><b>${esc(s.title)}</b></td><td>${esc(s.specs)}</td>
-        <td class="r">${s.status === "open" ? `<input type="number" min="1" step="50" value="${s.price}" aria-label="Price for ${esc(s.title)}" data-act-change="price" data-slot="${s.id}">` : `<span class="num">${money(s.price)}</span>`}</td>
+        <td class="r">${s.status === "open" ? `<input type="number" min="1" step="any" value="${s.price}" aria-label="Price for ${esc(s.title)}" data-act-change="price" data-slot="${s.id}">` : `<span class="num">${money(s.price)}</span>`}</td>
         <td>${pill(s.order_status || s.status, s.order_status ? ({ awaiting_payment: "Awaiting payment", in_escrow: "Sold", under_review: "Sold", ready_for_payout: "Sold", released: "Paid out" })[s.order_status] : s.status === "open" ? "Open" : "Reserved")}</td>
         <td class="r">${s.status === "open" ? `<button class="btn small danger" data-act="del-slot" data-slot="${s.id}">Remove</button>` : ""}</td></tr>`).join("")}
       </tbody></table></div></article>`;
@@ -395,7 +433,7 @@ async function hostSponsors() {
   <form class="finder host" data-form="host-search">
     <label class="field"><span>Dinner</span><select id="hf-e">${events.map(e => `<option value="${e.id}" ${e.id === S.hf.event_id ? "selected" : ""}>${esc(e.title)}, ${fmtDate(e.date)}</option>`).join("")}</select></label>
     <label class="field"><span>Guests</span><input id="hf-g" type="number" min="1" value="${esc(S.hf.guests)}" required></label>
-    <label class="field"><span>Funding needed ($)</span><input id="hf-f" type="number" min="0" step="50" value="${esc(S.hf.funding)}" required></label>
+    <label class="field"><span>Funding needed ($)</span><input id="hf-f" type="number" min="0" step="any" value="${esc(S.hf.funding)}" required></label>
     <label class="field grow"><span>What kind of brands belong at your table? <span class="hint">Optional, for example "coffee or snack brands"</span></span>
       <textarea id="hf-n" rows="2">${esc(S.hf.notes)}</textarea></label>
     <button class="btn primary" type="submit">Find brand partners</button>
@@ -437,7 +475,11 @@ async function hostInbox() {
     if (o.status === "awaiting_payment") body = `<p class="note warn">Waiting for ${esc(o.sponsor.name)} to pay. Nothing to do yet.</p>`;
     if (o.status === "in_escrow") body = `<p class="note">${esc(o.sponsor.name)} has paid and ${money(o.price)} is held in escrow. Upload ${plural(need, "photo")} showing the ${esc(o.slot.title.toLowerCase())} at the dinner, with their branding clear.</p>
       ${o.latest_proof ? `<p class="note bad" style="margin-top:8px">Your last photos did not pass. Retake and submit again.</p>${proofBlock(o)}` : ""}
-      <form class="upload" data-form="proof" data-id="${o.id}"><input type="file" name="files" accept="image/*" multiple required aria-label="Placement photos"><button class="btn primary small" type="submit">Submit photos</button></form>
+      <form class="upload proofform" data-form="proof" data-id="${o.id}">
+        <label class="field"><span>Placement photos</span><input type="file" name="files" accept="image/*" multiple required></label>
+        <label class="field"><span>Links to posts that tag ${esc(o.sponsor.name)} <span class="hint">Optional, one per line</span></span><textarea name="links" rows="2" placeholder="https://www.instagram.com/p/..."></textarea></label>
+        <label class="field"><span>Guests who checked in <span class="hint">Optional, from your door list or check-in code</span></span><input name="checkins" type="number" min="0" step="any" placeholder="${o.event.guests}"></label>
+        <button class="btn primary small" type="submit">Submit proof</button></form>
       <div class="samples"><span>No photos handy? Try a sample:</span>
         <button class="chip" data-act="sample" data-id="${o.id}" data-s="good">Clear photo</button>
         <button class="chip" data-act="sample" data-id="${o.id}" data-s="blurry">Blurry photo</button>
@@ -503,7 +545,8 @@ async function platReview() {
 async function platPayouts() {
   const orders = await api("/api/orders?status=ready_for_payout");
   return `<section class="intro"><h1>Payouts</h1><p class="lede">Verified placements waiting for a transfer. The fee is deducted at the moment of transfer.</p></section>
-  ${orders.length ? `<div class="rows">${orders.map(o => `<div class="row"><div><h3>${esc(o.slot.title)}, ${esc(o.event.title)}</h3><p class="sub">${esc(o.sponsor.name)} to ${esc(o.club.name)}. ${esc(o.note || "")}</p></div>
+  ${orders.length ? `<div class="rows">${orders.map(o => `<div class="row"><div><h3>${esc(o.slot.title)}, ${esc(o.event.title)}</h3><p class="sub">${esc(o.sponsor.name)} to ${esc(o.club.name)}. ${esc(o.note || "")}</p>
+      <p class="sub">Sponsor sign-off: ${o.signoff === "confirmed" ? "confirmed" : "waiting (confirms itself after 72 hours)"}</p></div>
       <div class="side"><b class="price num">${money(o.price)}</b><button class="btn primary small" data-act="payout" data-id="${o.id}">Review transfer</button></div></div>`).join("")}</div>` : `<p class="empty">No payouts waiting. Verify a placement as a host to see one here.</p>`}`;
 }
 
@@ -513,10 +556,10 @@ async function platFees() {
   const prev = await Promise.all(samples.map(p => api(`/api/fee-preview?price=${p}`)));
   return `<section class="intro"><h1>Fees and checks</h1><p class="lede">These are the placeholder numbers from the planning meeting. Change them here and every preview, ticket and payout follows.</p></section>
   <form class="finder four" data-form="settings">
-    <label class="field"><span>Platform fee (%)</span><input id="st-rate" type="number" min="0" max="100" step="0.5" value="${Math.round(s.fee_rate * 1000) / 10}"></label>
-    <label class="field"><span>Fee cap per transaction ($)</span><input id="st-cap" type="number" min="0" step="100" value="${s.fee_cap}"></label>
-    <label class="field"><span>Cost per photo check ($)</span><input id="st-ai" type="number" min="0" step="0.005" value="${s.ai_cost_per_photo}"></label>
-    <label class="field"><span>AI auto-verify confidence (%)</span><input id="st-conf" type="number" min="0" max="100" step="5" value="${Math.round(s.auto_verify_confidence * 100)}"></label>
+    <label class="field"><span>Platform fee (%)</span><input id="st-rate" type="number" min="0" max="100" step="any" value="${Math.round(s.fee_rate * 1000) / 10}"></label>
+    <label class="field"><span>Fee cap per transaction ($)</span><input id="st-cap" type="number" min="0" step="any" value="${s.fee_cap}"></label>
+    <label class="field"><span>Cost per photo check ($)</span><input id="st-ai" type="number" min="0" step="any" value="${s.ai_cost_per_photo}"></label>
+    <label class="field"><span>AI auto-verify confidence (%)</span><input id="st-conf" type="number" min="0" max="100" step="any" value="${Math.round(s.auto_verify_confidence * 100)}"></label>
     <div class="wide"><button class="btn primary" type="submit">Save settings</button></div>
   </form>
   <section class="sect"><h2>What the fee looks like</h2>
@@ -567,13 +610,23 @@ const ACTIONS = {
       <fieldset class="field fs"><legend>Who comes</legend>${checks("audiences", m.audiences.map(v => [v, nice(v)]), ev.audiences)}</fieldset>
       <fieldset class="field fs"><legend>Guest interests</legend>${checks("interests", m.interests.map(v => [v, v]), ev.interests)}</fieldset>
       <h3>Costs</h3>
-      <div class="two"><label class="field"><span>Total event cost ($)</span><input id="ee-c" type="number" min="0" step="50" value="${ev.funding.total_cost ?? 0}" required></label>
-      <label class="field"><span>Ticket price per guest ($)</span><input id="ee-p" type="number" min="0" step="5" value="${ev.ticket_price ?? 0}" required></label></div>
+      <div class="two"><label class="field"><span>Total event cost ($)</span><input id="ee-c" type="number" min="0" step="any" value="${ev.funding.total_cost ?? 0}" required></label>
+      <label class="field"><span>Ticket price per guest ($)</span><input id="ee-p" type="number" min="0" step="any" value="${ev.ticket_price ?? 0}" required></label></div>
       <h3>Sponsors</h3>
       <label class="field"><span>Most sponsors at this dinner <span class="hint">Keeps the evening from feeling too commercial</span></span><input id="ee-m" type="number" min="1" max="10" value="${ev.density.max_sponsors}" required></label>
       <fieldset class="field fs"><legend>Categories you would welcome</legend>${checks("pref", cats, ev.preferred_cats)}</fieldset>
       <fieldset class="field fs"><legend>Categories you do not want</legend>${checks("excl", cats, ev.excluded_cats)}</fieldset>
       <div class="btns"><button type="button" class="btn" data-act="close">Cancel</button><button class="btn primary" type="submit">Save profile</button></div></form>`);
+  },
+  async signoff(el) {
+    if (el.dataset.d === "dispute" && !el.dataset.confirmed) {
+      return dialog(`<h2>Dispute this placement?</h2><form class="stack" data-form="dispute" data-id="${el.dataset.id}">
+        <label class="field"><span>What is wrong?</span><textarea id="dp-note" rows="3" required placeholder="For example: our name was not on the menu"></textarea></label>
+        <p class="sub">The payout to the host pauses while Tablematch reviews the proof.</p>
+        <div class="btns"><button type="button" class="btn" data-act="close">Cancel</button><button class="btn primary" type="submit">Send dispute</button></div></form>`);
+    }
+    await api(`/api/orders/${el.dataset.id}/signoff`, "POST", { decision: "confirm" });
+    toast("Thanks. Placement confirmed."); await render();
   },
   async back() { S.openEv = null; $("#results").innerHTML = sponsorResults(); },
   async example(el) { S.openEv = null; S.sf.query = el.dataset.text; $("#sf-q").value = el.dataset.text; $("#sf-b").value = ""; S.sf.budget = ""; await submitSponsorSearch(); },
@@ -595,7 +648,7 @@ const ACTIONS = {
     const { ev, slot } = await findSlot(el.dataset.slot, el.dataset.ev);
     dialog(`<h2>Place a bid on ${esc(slot.title)}</h2><p>${esc(ev.club_name)}, ${esc(ev.title)}. List price ${money(slot.price)}.</p>
       <form class="stack" data-form="bid" data-slot="${slot.id}">
-        <label class="field"><span>Your bid ($)</span><input id="bid-amt" type="number" min="1" step="10" value="${Math.round(slot.price * 0.85)}" required></label>
+        <label class="field"><span>Your bid ($)</span><input id="bid-amt" type="number" min="1" step="any" value="${Math.round(slot.price * 0.85)}" required></label>
         <label class="field"><span>Message to the host <span class="hint">Optional</span></span><textarea id="bid-msg" rows="3" placeholder="Why your brand fits their guests"></textarea></label>
         <div class="btns"><button type="button" class="btn" data-act="close">Cancel</button><button class="btn primary" type="submit">Place bid</button></div></form>`);
   },
@@ -621,8 +674,8 @@ const ACTIONS = {
       <label class="field"><span>Dinner title</span><input id="ne-t" required></label>
       <div class="two"><label class="field"><span>Date</span><input id="ne-d" type="date" required></label>
       <label class="field"><span>Guests</span><input id="ne-g" type="number" min="1" value="24" required></label></div>
-      <div class="two"><label class="field"><span>Total event cost ($)</span><input id="ne-c" type="number" min="0" step="50" value="4000" required></label>
-      <label class="field"><span>Ticket price per guest ($)</span><input id="ne-p" type="number" min="0" step="5" value="60" required></label></div>
+      <div class="two"><label class="field"><span>Total event cost ($)</span><input id="ne-c" type="number" min="0" step="any" value="4000" required></label>
+      <label class="field"><span>Ticket price per guest ($)</span><input id="ne-p" type="number" min="0" step="any" value="60" required></label></div>
       <p class="sub">The funding gap is the cost minus ticket revenue. You can add audience, format and sponsor preferences after.</p>
       <label class="field"><span>What the dinner is like</span><textarea id="ne-x" rows="2" placeholder="One or two sentences for sponsors"></textarea></label>
       <p class="sub">Vibe and guest tags start from ${esc(c.name)}'s profile.</p>
@@ -631,7 +684,7 @@ const ACTIONS = {
   async "new-slot"(el) {
     dialog(`<h2>Add a slot</h2><form class="stack" data-form="new-slot" data-ev="${el.dataset.ev}">
       <label class="field"><span>Type</span><select id="ns-t">${Object.entries(S.meta.slot_types).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join("")}</select></label>
-      <label class="field"><span>Price ($)</span><input id="ns-p" type="number" min="1" step="25" value="500" required></label>
+      <label class="field"><span>Price ($)</span><input id="ns-p" type="number" min="1" step="any" value="500" required></label>
       <label class="field"><span>Photos needed as proof</span><input id="ns-n" type="number" min="1" max="5" value="1" required></label>
       <label class="field"><span>What the sponsor gets <span class="hint">Leave blank to use the standard wording</span></span><textarea id="ns-s" rows="3"></textarea></label>
       <div class="btns"><button type="button" class="btn" data-act="close">Cancel</button><button class="btn primary" type="submit">Add slot</button></div></form>`);
@@ -689,7 +742,7 @@ const ACTIONS = {
     const sp = S.meta.sponsors.find(s => s.id === Number(el.dataset.sp));
     dialog(`<h2>Offer ${esc(slot.title)} to ${esc(sp.name)}</h2>
       <form class="stack" data-form="propose" data-slot="${slot.id}" data-sp="${sp.id}">
-        <label class="field"><span>Price ($)</span><input id="pr-amt" type="number" min="1" step="10" value="${slot.price}" required></label>
+        <label class="field"><span>Price ($)</span><input id="pr-amt" type="number" min="1" step="any" value="${slot.price}" required></label>
         <label class="field"><span>Message</span><textarea id="pr-msg" rows="3">We think ${esc(sp.name)} would suit our guests at ${esc(ev.title)}.</textarea></label>
         <div class="btns"><button type="button" class="btn" data-act="close">Cancel</button><button class="btn primary" type="submit">Send offer</button></div></form>`);
   },
@@ -763,6 +816,10 @@ const FORMS = {
     });
     closeDialog(); toast("Dinner profile saved. Matching and the funding gap are updated."); S.hfData = null; S.sfData = null; await render();
   },
+  async dispute(form) {
+    await api(`/api/orders/${form.dataset.id}/signoff`, "POST", { decision: "dispute", note: $("#dp-note").value });
+    closeDialog(); toast("Dispute sent. The payout is paused while we review."); await render();
+  },
   async "new-slot"(form) {
     await api(`/api/events/${form.dataset.ev}/slots`, "POST", { type: $("#ns-t").value, price: Number($("#ns-p").value), photos_required: Number($("#ns-n").value), specs: $("#ns-s").value || null });
     closeDialog(); toast("Slot added."); await render();
@@ -774,6 +831,8 @@ const FORMS = {
   async proof(form) {
     const fd = new FormData();
     [...form.querySelector("input[type=file]").files].forEach(f => fd.append("files", f));
+    fd.append("links", form.querySelector("[name=links]").value);
+    fd.append("checkins", form.querySelector("[name=checkins]").value);
     const o = await api(`/api/orders/${form.dataset.id}/proof`, "POST", fd);
     proofToast(o); await render();
   },

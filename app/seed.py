@@ -70,6 +70,21 @@ CLUBS = [
     dict(name="Corner Table Queens", host_name="Elena Kostas", neighborhood="Astoria", borough="Queens",
          blurb="Neighborhood dinners that cook through Queens one cuisine at a time.",
          vibes=["foodie", "community", "casual"], audiences=["foodies", "families", "students"]),
+    dict(name="Second Hand Hearts", host_name="Nadia Brooks", neighborhood="Bushwick", borough="Brooklyn",
+         blurb="Swap meets and breakup parties for people starting over, one tote bag at a time.",
+         vibes=["hip", "casual", "community"], audiences=["young-professionals", "creatives", "students"]),
+    dict(name="Static Room", host_name="Ines Varga", neighborhood="Lower East Side", borough="Manhattan",
+         blurb="A storefront gallery that hosts artist talks, readings and odd little performances.",
+         vibes=["creative", "trendy", "late-night"], audiences=["creatives", "young-professionals"]),
+    dict(name="Dawn Patrol Run Club", host_name="Kofi Mensah", neighborhood="Williamsburg", borough="Brooklyn",
+         blurb="Sunrise runs over the bridge that end with coffee and something warm.",
+         vibes=["wellness", "community", "casual"], audiences=["fitness", "young-professionals"]),
+    dict(name="Side B Sessions", host_name="Rae Tanaka", neighborhood="Bushwick", borough="Brooklyn",
+         blurb="Full-album listening parties on a very good sound system. Phones down, records up.",
+         vibes=["music", "cozy", "late-night"], audiences=["creatives", "young-professionals", "couples"]),
+    dict(name="Kiln & Co", host_name="Sofia Reyes", neighborhood="Astoria", borough="Queens",
+         blurb="Beginner pottery nights with snacks, playlists and too many mugs.",
+         vibes=["creative", "cozy", "community"], audiences=["couples", "creatives", "families"]),
 ]
 
 # slot catalog: type -> (title, specs template)
@@ -111,6 +126,21 @@ EVENTS = [
     (5, "Around Astoria in five plates", 11, 30, 3000, ["foodie", "community", "casual"], ["foodies", "families", "students"],
      "Greek, Egyptian, Colombian, Bangladeshi and Brazilian plates from five neighbors.",
      [("menu", 250, 1), ("table", 800, 1), ("drink", 700, 2), ("gift", 550, 1)]),
+    (6, "The Ex Files: swap out your ex's stuff", 8, 150, 4500, ["hip", "casual", "community"], ["young-professionals", "creatives", "students"],
+     "Bring the hoodie, the records and the air fryer. Leave with something that has no memories attached. DJ from 8.",
+     [("menu", 300, 1), ("drink", 1200, 2), ("gift", 900, 1), ("display", 700, 1), ("title", 3000, 2)]),
+    (7, "Psychic Telephone: an artist talk", 13, 60, 1800, ["creative", "trendy"], ["creatives", "young-professionals"],
+     "Three artists pass one idea down the line and show what came out the other end. Q&A and drinks after.",
+     [("menu", 200, 1), ("drink", 700, 2), ("display", 400, 1)]),
+    (8, "Bridge run and bagels", 4, 120, 2200, ["wellness", "community", "casual"], ["fitness", "young-professionals"],
+     "A 5K over the Williamsburg Bridge at sunrise, then bagels and cold drinks in the park.",
+     [("drink", 800, 2), ("gift", 700, 1), ("table", 500, 1)]),
+    (9, "Side B: a full-album listening party", 17, 70, 2400, ["music", "cozy", "late-night"], ["creatives", "couples"],
+     "One classic record, start to finish, on a sound system worth hearing. No talking during side B.",
+     [("drink", 900, 2), ("display", 500, 1), ("gift", 600, 1)]),
+    (10, "Mugs and mezcal: a pottery night", 21, 24, 1500, ["creative", "cozy"], ["couples", "creatives"],
+     "Throw your first mug, glaze someone else's, and take a finished piece home three weeks later.",
+     [("drink", 600, 2), ("gift", 450, 1), ("table", 350, 1)]),
 ]
 
 # illustrative cover photos bundled in static/covers (AI-generated, for fictional dinners)
@@ -141,6 +171,8 @@ CATEGORIES = {
     "condiments": "Sauces and condiments",
 }
 FORMATS = {
+    "swap": "Swap meet", "talk": "Talk and Q&A", "run": "Group run", "listening": "Listening session",
+    "workshop": "Hands-on workshop",
     "family-style": "Family-style supper", "tasting": "Seated tasting menu", "music": "Supper with live music",
     "late-night": "Late-night counter", "cook-off": "Cook-off or competition", "banquet": "Large banquet",
     "test-kitchen": "Test kitchen", "potluck": "Neighborhood potluck",
@@ -159,6 +191,20 @@ SPONSOR_PROFILE = {
     "Pocketpal": dict(cat="fintech", interests=["tech", "nightlife", "travel"], age_groups=["21-29"], engagement=["display", "menu"]),
     "Spicewell": dict(cat="condiments", interests=["food culture", "nightlife"], age_groups=["21-29", "30-39"], engagement=["table", "menu", "gift"]),
 }
+# event kind and how many people marked themselves interested (demo numbers)
+KINDS = {"dinner": "Supper club", "party": "Party", "swap": "Swap meet", "talk": "Artist talk",
+         "run": "Run club", "listening": "Listening party", "workshop": "Workshop"}
+EVENT_KIND = {
+    "The Ex Files: swap out your ex's stuff": ("swap", 640), "Psychic Telephone: an artist talk": ("talk", 210),
+    "Bridge run and bagels": ("run", 380), "Side B: a full-album listening party": ("listening", 165),
+    "Mugs and mezcal: a pottery night": ("workshop", 92),
+    "Smoke and stone fruit": ("dinner", 88), "The long summer table": ("dinner", 61),
+    "Sunday supper with the quartet": ("dinner", 140), "Green plates, no phones": ("dinner", 47),
+    "Late noodle night": ("dinner", 120), "Chili oil showdown": ("dinner", 175),
+    "Founders table: the bridge dinner": ("dinner", 310), "Test kitchen: fermentation": ("dinner", 74),
+    "Around Astoria in five plates": ("dinner", 96),
+}
+
 # title -> format, interests, age group, ticket price, max sponsors, preferred and excluded categories
 EVENT_PROFILE = {
     "Smoke and stone fruit": ("tasting", ["food culture", "design", "art"], "21-29", 95, 3, ["coffee", "spirits", "condiments"], ["fintech"]),
@@ -169,9 +215,14 @@ EVENT_PROFILE = {
     "Chili oil showdown": ("cook-off", ["food culture", "nightlife"], "21-29", 40, 3, ["condiments", "beverages"], []),
     "Founders table: the bridge dinner": ("banquet", ["tech", "design", "art"], "30-39", 110, 4, ["coffee", "spirits", "fintech"], ["pet"]),
     "Test kitchen: fermentation": ("test-kitchen", ["food culture", "tech", "sustainability"], "21-29", 90, 2, ["condiments", "coffee"], []),
+    "The Ex Files: swap out your ex's stuff": ("swap", ["fashion", "sustainability", "nightlife"], "21-29", 15, 4, ["beverages", "snacks", "fintech"], ["pet"]),
+    "Psychic Telephone: an artist talk": ("talk", ["art", "design"], "21-29", 20, 2, ["spirits", "coffee", "beverages"], ["fintech"]),
+    "Bridge run and bagels": ("run", ["fitness", "wellness"], "21-29", 10, 3, ["beverages", "snacks", "coffee"], ["spirits"]),
+    "Side B: a full-album listening party": ("listening", ["music", "nightlife", "design"], "30-39", 25, 2, ["spirits", "beverages"], ["fintech"]),
+    "Mugs and mezcal: a pottery night": ("workshop", ["art", "design"], "30-39", 55, 2, ["spirits", "snacks"], []),
     "Around Astoria in five plates": ("potluck", ["food culture", "family", "travel"], "30-39", 35, 3, ["condiments", "beverages", "snacks"], ["spirits"]),
 }
-DATA_VERSION = "2"
+DATA_VERSION = "3"
 
 
 NOW = lambda: datetime.now().isoformat(timespec="seconds")
@@ -204,7 +255,8 @@ def seed():
 
     # A finished deal, so the platform view shows a real payout and fee.
     slot = slot_ids[(5, "menu")]
-    _order(slot, sp["Spicewell"], 300, "buy", s, "released", paid=True, released=True)
+    done = _order(slot, sp["Spicewell"], 300, "buy", s, "released", paid=True, released=True)
+    db.update("orders", done, signoff="confirmed")
     # A deal in escrow, waiting for the host to upload photos.
     slot = slot_ids[(4, "drink")]
     _order(slot, sp["Tidewell"], 700, "buy", s, "in_escrow", paid=True)
@@ -222,7 +274,8 @@ def seed():
 def _profile(title, guests, need):
     fmt, interests, age, ticket, cap, pref, excl = EVENT_PROFILE[title]
     # total cost is set so that cost minus ticket revenue equals the original funding gap
-    return dict(format=fmt, interests=interests, age_group=age, ticket_price=ticket,
+    kind, interested = EVENT_KIND.get(title, ("dinner", 0))
+    return dict(kind=kind, interested=interested, format=fmt, interests=interests, age_group=age, ticket_price=ticket,
                 total_cost=need + guests * ticket, max_sponsors=cap, preferred_cats=pref, excluded_cats=excl)
 
 
