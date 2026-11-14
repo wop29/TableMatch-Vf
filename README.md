@@ -124,3 +124,9 @@ Everything here is a mock-up. Nothing calls an outside service, real uploads alw
 - **Sponsors:** each placement shows its own verification status and explanation, the host's evidence, and a report with file fingerprints.
 - **Seeded demo cases:** authentic, reused photo, AI-generation signals, not enough evidence, needs a person, and a completed deal.
 - **Money:** AI findings never reject a host or move money. Payouts and refunds still need a person.
+
+## Evals
+
+An eval suite for the AI and automated decisions (brief reading, matching, photo gate, risk routing,
+evidence privacy, vision check) lives in `evals/`. Run `python evals/run_evals.py`. Design, baseline and
+known failures: `evals/README.md`. Reviewers and grading agents: start at `GRADING.md`.

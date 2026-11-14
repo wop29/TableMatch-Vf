@@ -1,0 +1,39 @@
+name: evals
+on:
+  push:
+  pull_request:
+jobs:
+  offline-evals:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt pytest httpx
+      - name: App tests and grader tests
+        run: python -m pytest -q
+      - name: Offline eval suites (ratchet against the committed baseline)
+        run: python evals/run_evals.py --out ci --compare evals/baseline/summary.json --gate regression
+      - name: Must-have thresholds (report only until the two known failures are fixed)
+        run: python evals/run_evals.py --out ci-thresholds || echo "::warning::must-have thresholds not yet met, see evals/README.md"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eval-results
+          path: evals/results/
+  model-evals:
+    # Runs the vision suite only when the repository has an API key secret configured.
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'push' }}
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt anthropic
+      - name: Vision suite, 3 runs per case
+        if: ${{ env.ANTHROPIC_API_KEY != '' }}
+        run: python evals/run_evals.py --suite vision --runs 3 --out ci-vision

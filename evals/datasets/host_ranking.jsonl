@@ -1,0 +1,8 @@
+{"id": "host-001", "input": {"event": "Bridge run and bagels", "guests": 120, "funding": 2000, "notes": ""}, "expected": {"relevant": {"Tidewell": 2, "Leafline": 0}}, "tags": ["common"], "split": "dev"}
+{"id": "host-002", "input": {"event": "Sunday supper with the quartet", "guests": 36, "funding": 3000, "notes": ""}, "expected": {"relevant": {"Copperhollow": 2}}, "tags": ["common"], "split": "dev"}
+{"id": "host-003", "input": {"event": "Founders table: the bridge dinner", "guests": 80, "funding": 8000, "notes": ""}, "expected": {"relevant": {"Pocketpal": 2, "Sunbrew": 2, "Glowlab": 1}}, "tags": ["common"], "split": "dev"}
+{"id": "host-004", "input": {"event": "Green plates, no phones", "guests": 20, "funding": 1000, "notes": "skincare would be lovely"}, "expected": {"relevant": {"Glowlab": 2, "Tidewell": 1}}, "tags": ["notes"], "split": "dev"}
+{"id": "host-005", "input": {"event": "Around Astoria in five plates", "guests": 30, "funding": 1200, "notes": ""}, "expected": {"relevant": {"Spicewell": 2, "Pawlette": 1}}, "tags": ["common"], "split": "held_out"}
+{"id": "host-006", "input": {"event": "Late noodle night", "guests": 32, "funding": 1000, "notes": ""}, "expected": {"relevant": {"Spicewell": 2, "Sunbrew": 1}}, "tags": ["category-taken"], "split": "dev"}
+{"id": "host-007", "input": {"event": "Mugs and mezcal: a pottery night", "guests": 24, "funding": 900, "notes": ""}, "expected": {"relevant": {"Sunbrew": 1, "Copperhollow": 2}}, "tags": ["category-taken"], "split": "dev"}
+{"id": "host-008", "input": {"event": "The Ex Files: swap out your ex's stuff", "guests": 150, "funding": 4000, "notes": ""}, "expected": {"relevant": {"Pocketpal": 2, "Sunbrew": 1, "Tidewell": 1}}, "tags": ["exclusion"], "split": "dev"}

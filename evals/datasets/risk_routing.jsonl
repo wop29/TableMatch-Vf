@@ -1,0 +1,12 @@
+{"id": "route-001", "input": {"scenario": "authentic"}, "expected": {"band": "low", "decision": "verified"}, "tags": ["scenario"], "split": "dev"}
+{"id": "route-002", "input": {"scenario": "reused"}, "expected": {"band": "high", "decision": "needs_review"}, "tags": ["scenario", "fraud"], "split": "dev"}
+{"id": "route-003", "input": {"scenario": "ai_signals"}, "expected": {"band": "high", "decision": "needs_review"}, "tags": ["scenario", "fraud"], "split": "dev"}
+{"id": "route-004", "input": {"scenario": "insufficient"}, "expected": {"decision": "more_evidence"}, "tags": ["scenario"], "split": "dev"}
+{"id": "route-005", "input": {"scenario": "needs_review"}, "expected": {"band_in": ["medium", "high"], "decision": "needs_review"}, "tags": ["scenario"], "split": "held_out"}
+{"id": "route-006", "input": {"factors": {"duplicate": 0.95}}, "expected": {"band": "high", "decision": "needs_review"}, "tags": ["factor-only", "fraud"], "split": "dev"}
+{"id": "route-007", "input": {"factors": {"synthetic": 0.9}}, "expected": {"band_in": ["medium", "high"], "decision": "needs_review"}, "tags": ["factor-only", "fraud"], "split": "dev"}
+{"id": "route-008", "input": {"factors": {"synthetic": 0.7, "duplicate": 0.7}}, "expected": {"band": "high", "decision": "needs_review"}, "tags": ["factor-only", "fraud"], "split": "dev"}
+{"id": "route-009", "input": {"factors": {"placement": 0.9, "missing": 1.0}}, "expected": {"decision_in": ["needs_review", "more_evidence"]}, "tags": ["factor-only"], "split": "dev"}
+{"id": "route-010", "input": {"factors": {"metadata": 0.6}}, "expected": {"band": "low", "decision": "verified"}, "tags": ["factor-only", "benign"], "split": "held_out"}
+{"id": "route-011", "input": {"factors": {"context": 0.5, "metadata": 0.5}}, "expected": {"decision": "needs_review"}, "tags": ["factor-only"], "split": "dev"}
+{"id": "route-012", "input": {"factors": {"duplicate": 1.0, "synthetic": 1.0, "metadata": 1.0, "context": 1.0, "placement": 1.0, "missing": 1.0}}, "expected": {"band": "high", "decision": "needs_review"}, "tags": ["factor-only", "extreme"], "split": "dev"}

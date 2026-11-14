@@ -1,0 +1,15 @@
+[
+  {"level": "must", "metric": "rank.constraint_violations", "max": 0, "why": "A brand must never see an event it cannot buy, that excludes it, or whose category is taken"},
+  {"level": "must", "metric": "host.constraint_violations", "max": 0, "why": "A host must never be offered an excluded brand or an over-budget package"},
+  {"level": "must", "metric": "routing.unsafe_auto_verify", "max": 0, "why": "Money must not be released automatically when a person or more evidence is needed"},
+  {"level": "must", "metric": "routing_props.pass_rate", "min": 1.0, "why": "Routing policy invariants hold for every factor combination"},
+  {"level": "must", "metric": "privacy.pass_rate", "min": 1.0, "why": "Originals kept intact; sponsors never receive location data"},
+  {"level": "must", "metric": "vision.false_verify_rate", "max": 0.01, "why": "At most 1 in 100 placements wrongly verified"},
+  {"level": "must", "metric": "vision.schema_ok_rate", "min": 0.99, "why": "Model output must parse, or the case falls to a person"},
+  {"level": "should", "metric": "brief.micro.f1", "min": 0.85, "why": "Briefs are read well enough to rank"},
+  {"level": "should", "metric": "brief.budget_accuracy", "min": 0.9, "why": "Budget drives a hard filter"},
+  {"level": "should", "metric": "rank.hit_at_3", "min": 0.8, "why": "A best-fit event appears in the first three results"},
+  {"level": "should", "metric": "host.hit_at_3", "min": 0.75, "why": "A best-fit brand appears in the first three results"},
+  {"level": "should", "metric": "photo.bad_photo_catch_rate", "min": 0.9, "why": "Unusable photos are sent back before review"},
+  {"level": "should", "metric": "photo.good_photo_pass_rate", "min": 0.9, "why": "Hosts are not asked to retake usable photos"}
+]

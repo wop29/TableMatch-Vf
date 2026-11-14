@@ -1,0 +1,48 @@
+{"id": "photo-001", "input": {"slot": "menu", "blur": 0}, "expected": {"pass": true}, "tags": ["blur"], "split": "dev"}
+{"id": "photo-002", "input": {"slot": "menu", "blur": 1}, "expected": {"pass": true}, "tags": ["blur"], "split": "dev"}
+{"id": "photo-003", "input": {"slot": "menu", "blur": 2}, "expected": {"pass": true}, "tags": ["blur"], "split": "dev"}
+{"id": "photo-004", "input": {"slot": "menu", "blur": 3}, "expected": {"pass": true}, "tags": ["blur"], "split": "dev"}
+{"id": "photo-005", "input": {"slot": "menu", "blur": 5}, "expected": {"pass": true}, "tags": ["blur", "borderline"], "split": "held_out"}
+{"id": "photo-006", "input": {"slot": "menu", "blur": 8}, "expected": {"pass": false}, "tags": ["blur", "borderline"], "split": "dev"}
+{"id": "photo-007", "input": {"slot": "menu", "blur": 12}, "expected": {"pass": false}, "tags": ["blur"], "split": "dev"}
+{"id": "photo-008", "input": {"slot": "menu", "blur": 22}, "expected": {"pass": false}, "tags": ["blur"], "split": "dev"}
+{"id": "photo-009", "input": {"slot": "menu", "dark": 0.5}, "expected": {"pass": true}, "tags": ["dark"], "split": "dev"}
+{"id": "photo-010", "input": {"slot": "menu", "dark": 0.25}, "expected": {"pass": true}, "tags": ["dark"], "split": "held_out"}
+{"id": "photo-011", "input": {"slot": "menu", "dark": 0.1}, "expected": {"pass": false}, "tags": ["dark"], "split": "dev"}
+{"id": "photo-012", "input": {"slot": "menu", "dark": 0.05}, "expected": {"pass": false}, "tags": ["dark"], "split": "dev"}
+{"id": "photo-013", "input": {"slot": "menu", "size": [1200, 800]}, "expected": {"pass": true}, "tags": ["size"], "split": "dev"}
+{"id": "photo-014", "input": {"slot": "menu", "size": [800, 533]}, "expected": {"pass": true}, "tags": ["size"], "split": "dev"}
+{"id": "photo-015", "input": {"slot": "menu", "size": [640, 427]}, "expected": {"pass": true}, "tags": ["size"], "split": "held_out"}
+{"id": "photo-016", "input": {"slot": "menu", "size": [600, 400]}, "expected": {"pass": true}, "tags": ["size"], "split": "dev"}
+{"id": "photo-017", "input": {"slot": "menu", "size": [480, 320]}, "expected": {"pass": true}, "tags": ["size"], "split": "dev"}
+{"id": "photo-018", "input": {"slot": "menu", "size": [240, 160]}, "expected": {"pass": false}, "tags": ["size"], "split": "dev"}
+{"id": "photo-019", "input": {"slot": "menu", "jpeg": 90}, "expected": {"pass": true}, "tags": ["compression"], "split": "dev"}
+{"id": "photo-020", "input": {"slot": "menu", "jpeg": 40}, "expected": {"pass": true}, "tags": ["compression"], "split": "held_out"}
+{"id": "photo-021", "input": {"slot": "menu", "jpeg": 10}, "expected": {"pass": true}, "tags": ["compression"], "split": "dev"}
+{"id": "photo-022", "input": {"slot": "menu", "noise": 40}, "expected": {"pass": true}, "tags": ["noise"], "split": "dev"}
+{"id": "photo-023", "input": {"slot": "menu", "overexposed": true}, "expected": {"pass": true}, "tags": ["exposure", "borderline"], "split": "dev"}
+{"id": "photo-024", "input": {"slot": "menu", "solid": true}, "expected": {"pass": false}, "tags": ["adversarial", "no-content"], "split": "dev"}
+{"id": "photo-025", "input": {"slot": "display", "blur": 0}, "expected": {"pass": true}, "tags": ["blur"], "split": "held_out"}
+{"id": "photo-026", "input": {"slot": "display", "blur": 1}, "expected": {"pass": true}, "tags": ["blur"], "split": "dev"}
+{"id": "photo-027", "input": {"slot": "display", "blur": 2}, "expected": {"pass": true}, "tags": ["blur"], "split": "dev"}
+{"id": "photo-028", "input": {"slot": "display", "blur": 3}, "expected": {"pass": true}, "tags": ["blur"], "split": "dev"}
+{"id": "photo-029", "input": {"slot": "display", "blur": 5}, "expected": {"pass": true}, "tags": ["blur", "borderline"], "split": "dev"}
+{"id": "photo-030", "input": {"slot": "display", "blur": 8}, "expected": {"pass": false}, "tags": ["blur", "borderline"], "split": "held_out"}
+{"id": "photo-031", "input": {"slot": "display", "blur": 12}, "expected": {"pass": false}, "tags": ["blur"], "split": "dev"}
+{"id": "photo-032", "input": {"slot": "display", "blur": 22}, "expected": {"pass": false}, "tags": ["blur"], "split": "dev"}
+{"id": "photo-033", "input": {"slot": "display", "dark": 0.5}, "expected": {"pass": true}, "tags": ["dark"], "split": "dev"}
+{"id": "photo-034", "input": {"slot": "display", "dark": 0.25}, "expected": {"pass": true}, "tags": ["dark"], "split": "dev"}
+{"id": "photo-035", "input": {"slot": "display", "dark": 0.1}, "expected": {"pass": false}, "tags": ["dark"], "split": "held_out"}
+{"id": "photo-036", "input": {"slot": "display", "dark": 0.05}, "expected": {"pass": false}, "tags": ["dark"], "split": "dev"}
+{"id": "photo-037", "input": {"slot": "display", "size": [1200, 800]}, "expected": {"pass": true}, "tags": ["size"], "split": "dev"}
+{"id": "photo-038", "input": {"slot": "display", "size": [800, 533]}, "expected": {"pass": true}, "tags": ["size"], "split": "dev"}
+{"id": "photo-039", "input": {"slot": "display", "size": [640, 427]}, "expected": {"pass": true}, "tags": ["size"], "split": "dev"}
+{"id": "photo-040", "input": {"slot": "display", "size": [600, 400]}, "expected": {"pass": true}, "tags": ["size"], "split": "held_out"}
+{"id": "photo-041", "input": {"slot": "display", "size": [480, 320]}, "expected": {"pass": true}, "tags": ["size"], "split": "dev"}
+{"id": "photo-042", "input": {"slot": "display", "size": [240, 160]}, "expected": {"pass": false}, "tags": ["size"], "split": "dev"}
+{"id": "photo-043", "input": {"slot": "display", "jpeg": 90}, "expected": {"pass": true}, "tags": ["compression"], "split": "dev"}
+{"id": "photo-044", "input": {"slot": "display", "jpeg": 40}, "expected": {"pass": true}, "tags": ["compression"], "split": "dev"}
+{"id": "photo-045", "input": {"slot": "display", "jpeg": 10}, "expected": {"pass": true}, "tags": ["compression"], "split": "held_out"}
+{"id": "photo-046", "input": {"slot": "display", "noise": 40}, "expected": {"pass": true}, "tags": ["noise"], "split": "dev"}
+{"id": "photo-047", "input": {"slot": "display", "overexposed": true}, "expected": {"pass": true}, "tags": ["exposure", "borderline"], "split": "dev"}
+{"id": "photo-048", "input": {"slot": "display", "solid": true}, "expected": {"pass": false}, "tags": ["adversarial", "no-content"], "split": "dev"}

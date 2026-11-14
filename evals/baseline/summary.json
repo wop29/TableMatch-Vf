@@ -1,0 +1,275 @@
+{
+  "run": "baseline-run",
+  "date": "2026-11-14",
+  "split": "all",
+  "suites": {
+    "brief": {
+      "cases": 40,
+      "passed": 24,
+      "ran": true,
+      "pass_rate": 0.6,
+      "median_ms": 0.21,
+      "per_field": {
+        "vibes": {
+          "precision": 0.889,
+          "recall": 0.96,
+          "f1": 0.923
+        },
+        "audiences": {
+          "precision": 1.0,
+          "recall": 0.842,
+          "f1": 0.914
+        },
+        "interests": {
+          "precision": 0.947,
+          "recall": 1.0,
+          "f1": 0.973
+        },
+        "places": {
+          "precision": 0.696,
+          "recall": 0.727,
+          "f1": 0.711
+        },
+        "slot_types": {
+          "precision": 1.0,
+          "recall": 0.818,
+          "f1": 0.9
+        }
+      },
+      "micro": {
+        "precision": 0.883,
+        "recall": 0.874,
+        "f1": 0.878
+      },
+      "budget_accuracy": 0.925,
+      "slices": {
+        "adversarial": "3/6",
+        "budget-format": "2/5",
+        "case": "1/1",
+        "common": "14/15",
+        "conflict": "0/1",
+        "edge": "7/19",
+        "empty": "1/1",
+        "false-friend": "0/2",
+        "hyphen": "0/1",
+        "implicit-age": "0/1",
+        "injection": "1/1",
+        "language": "0/1",
+        "markup": "1/1",
+        "multi-slot": "1/1",
+        "negation": "0/3",
+        "slang": "0/1",
+        "stuffing": "1/1",
+        "synonym": "1/2",
+        "typo": "0/1"
+      }
+    },
+    "rank": {
+      "cases": 20,
+      "passed": 20,
+      "ran": true,
+      "pass_rate": 1.0,
+      "median_ms": 0.3,
+      "constraint_violations": 0,
+      "hit_at_3": 1.0,
+      "ndcg_at_3": 0.914,
+      "mrr": 0.942,
+      "slices": {
+        "budget": "3/3",
+        "category-taken": "1/1",
+        "common": "9/9",
+        "empty-brief": "1/1",
+        "exclusion": "4/4",
+        "filter": "1/1",
+        "hard": "1/1",
+        "profile": "2/2",
+        "slot-type": "2/2"
+      }
+    },
+    "host": {
+      "cases": 8,
+      "passed": 7,
+      "ran": true,
+      "pass_rate": 0.875,
+      "median_ms": 6.93,
+      "constraint_violations": 0,
+      "hit_at_3": 0.875,
+      "ndcg_at_3": 0.785,
+      "slices": {
+        "category-taken": "2/2",
+        "common": "4/4",
+        "exclusion": "1/1",
+        "notes": "0/1"
+      }
+    },
+    "photo": {
+      "cases": 48,
+      "passed": 40,
+      "ran": true,
+      "pass_rate": 0.833,
+      "median_ms": 6.79,
+      "confusion": {
+        "tp": 28,
+        "tn": 12,
+        "fp": 2,
+        "fn": 6
+      },
+      "accuracy": 0.833,
+      "bad_photo_catch_rate": 0.857,
+      "good_photo_pass_rate": 0.824,
+      "slices": {
+        "adversarial": "0/2",
+        "blur": "14/16",
+        "borderline": "4/6",
+        "compression": "6/6",
+        "dark": "8/8",
+        "exposure": "2/2",
+        "no-content": "0/2",
+        "noise": "2/2",
+        "size": "8/12"
+      }
+    },
+    "routing": {
+      "cases": 12,
+      "passed": 8,
+      "ran": true,
+      "pass_rate": 0.667,
+      "median_ms": 0.01,
+      "unsafe_auto_verify": 2,
+      "slices": {
+        "benign": "1/1",
+        "extreme": "1/1",
+        "factor-only": "3/7",
+        "fraud": "3/5",
+        "scenario": "5/5"
+      }
+    },
+    "routing_props": {
+      "cases": 5,
+      "passed": 5,
+      "ran": true,
+      "pass_rate": 1.0,
+      "median_ms": 0,
+      "slices": {
+        "property": "5/5"
+      }
+    },
+    "privacy": {
+      "cases": 2,
+      "passed": 1,
+      "ran": true,
+      "pass_rate": 0.5,
+      "median_ms": 0,
+      "slices": {
+        "blur_off": "0/1",
+        "blur_on": "1/1"
+      }
+    }
+  },
+  "thresholds": [
+    {
+      "level": "must",
+      "metric": "rank.constraint_violations",
+      "max": 0,
+      "why": "A brand must never see an event it cannot buy, that excludes it, or whose category is taken",
+      "value": 0,
+      "status": "pass"
+    },
+    {
+      "level": "must",
+      "metric": "host.constraint_violations",
+      "max": 0,
+      "why": "A host must never be offered an excluded brand or an over-budget package",
+      "value": 0,
+      "status": "pass"
+    },
+    {
+      "level": "must",
+      "metric": "routing.unsafe_auto_verify",
+      "max": 0,
+      "why": "Money must not be released automatically when a person or more evidence is needed",
+      "value": 2,
+      "status": "FAIL"
+    },
+    {
+      "level": "must",
+      "metric": "routing_props.pass_rate",
+      "min": 1.0,
+      "why": "Routing policy invariants hold for every factor combination",
+      "value": 1.0,
+      "status": "pass"
+    },
+    {
+      "level": "must",
+      "metric": "privacy.pass_rate",
+      "min": 1.0,
+      "why": "Originals kept intact; sponsors never receive location data",
+      "value": 0.5,
+      "status": "FAIL"
+    },
+    {
+      "level": "must",
+      "metric": "vision.false_verify_rate",
+      "max": 0.01,
+      "why": "At most 1 in 100 placements wrongly verified",
+      "value": null,
+      "status": "not run"
+    },
+    {
+      "level": "must",
+      "metric": "vision.schema_ok_rate",
+      "min": 0.99,
+      "why": "Model output must parse, or the case falls to a person",
+      "value": null,
+      "status": "not run"
+    },
+    {
+      "level": "should",
+      "metric": "brief.micro.f1",
+      "min": 0.85,
+      "why": "Briefs are read well enough to rank",
+      "value": 0.878,
+      "status": "pass"
+    },
+    {
+      "level": "should",
+      "metric": "brief.budget_accuracy",
+      "min": 0.9,
+      "why": "Budget drives a hard filter",
+      "value": 0.925,
+      "status": "pass"
+    },
+    {
+      "level": "should",
+      "metric": "rank.hit_at_3",
+      "min": 0.8,
+      "why": "A best-fit event appears in the first three results",
+      "value": 1.0,
+      "status": "pass"
+    },
+    {
+      "level": "should",
+      "metric": "host.hit_at_3",
+      "min": 0.75,
+      "why": "A best-fit brand appears in the first three results",
+      "value": 0.875,
+      "status": "pass"
+    },
+    {
+      "level": "should",
+      "metric": "photo.bad_photo_catch_rate",
+      "min": 0.9,
+      "why": "Unusable photos are sent back before review",
+      "value": 0.857,
+      "status": "FAIL"
+    },
+    {
+      "level": "should",
+      "metric": "photo.good_photo_pass_rate",
+      "min": 0.9,
+      "why": "Hosts are not asked to retake usable photos",
+      "value": 0.824,
+      "status": "FAIL"
+    }
+  ]
+}

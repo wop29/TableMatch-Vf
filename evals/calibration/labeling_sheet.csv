@@ -1,0 +1,4 @@
+case_id,rubric,output_excerpt,labeler_a,labeler_b,resolved,judge_verdict,notes
+vision-001,vision_notes_faithful,,,,,,
+vision-002,vision_notes_faithful,,,,,,
+msg-001,message_drafts,,,,,,
