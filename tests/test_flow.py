@@ -8,6 +8,7 @@ tmp = tempfile.mkdtemp()
 os.environ["HL_DB"] = str(Path(tmp) / "t.db")
 os.environ["HL_UPLOADS"] = str(Path(tmp) / "up")
 os.environ["HL_VERIFY"] = "demo"
+os.environ["HL_VISION"] = "off"  # keep these flow tests offline even when an API key is set
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from fastapi.testclient import TestClient  # noqa: E402

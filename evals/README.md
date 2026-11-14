@@ -22,7 +22,7 @@ reliable method per criterion, versioned datasets, graders, judge calibration, h
 
 ```bash
 pip install -r requirements.txt pytest httpx
-python -m pytest -q                                          # 29 app tests + 5 grader tests
+python -m pytest -q                                          # 29 flow + 5 AI-step + 5 grader tests
 python evals/run_evals.py                                    # all offline suites (~3 s, no network)
 python evals/run_evals.py --suite brief photo --split held_out
 python evals/run_evals.py --compare evals/baseline/summary.json --gate regression
@@ -32,6 +32,11 @@ ANTHROPIC_API_KEY=... python evals/run_evals.py --suite vision --runs 3
 Output: `evals/results/<run>/results.jsonl` (per case: input, output, scores, notes),
 `summary.json`, `summary.md`. Exit code 1 when a must-have threshold fails (`--gate thresholds`, default)
 or when a must-have metric is worse than the baseline (`--gate regression`).
+
+## Golden set for the AI step
+
+`evals/golden/`: 20 hand-labelled cases for the visual placement check, a two-tier runner with a cross-model
+judge (`run_model_evals.py`, needs an API key) and a scorer (`score_golden.py`). See `submission/04_eval_pack.md`.
 
 ## Baseline (14 Nov 2026, commit f78e944)
 

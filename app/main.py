@@ -571,7 +571,8 @@ async def upload_proof(order_id: int, files: List[UploadFile] = File(default=[])
         if n_checkins < 0:
             raise HTTPException(400, "Check-ins cannot be negative.")
     evidence.run(o, raw, scenario, f"{club['host_name']} ({club['name']})", note=note, links=link_list,
-                 checkins=n_checkins, capture_session=capture or None, blur_faces=blur_faces in ("1", "true", "on"))
+                 checkins=n_checkins, capture_session=capture or None, blur_faces=blur_faces in ("1", "true", "on"),
+                 use_ai=not scenario)
     return order_view(get_or_404("orders", order_id))
 
 

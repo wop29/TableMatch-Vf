@@ -129,4 +129,8 @@ Everything here is a mock-up. Nothing calls an outside service, real uploads alw
 
 An eval suite for the AI and automated decisions (brief reading, matching, photo gate, risk routing,
 evidence privacy, vision check) lives in `evals/`. Run `python evals/run_evals.py`. Design, baseline and
-known failures: `evals/README.md`. Reviewers and grading agents: start at `GRADING.md`.
+known failures: `evals/README.md`.
+
+## Submission
+
+One file per criterion, with an index and a machine-readable manifest: `submission/README.md`, `submission/manifest.json`.

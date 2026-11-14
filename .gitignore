@@ -5,3 +5,4 @@ data/
 .DS_Store
 evals/results/*
 !evals/results/.gitkeep
+evals/golden/results/dryrun-*

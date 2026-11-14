@@ -1,0 +1,143 @@
+{
+  "project": "Tablematch",
+  "description": "Sponsorship marketplace for New York supper clubs and independent events",
+  "repository": "https://github.com/wop29/TableMatch-Vf",
+  "criteria": [
+    {
+      "id": 1,
+      "name": "Working prototype",
+      "points": 40,
+      "file": "submission/01_working_prototype.md",
+      "claim": "Runs end to end on real inputs: free-text brief, real HTTP endpoints, real JPEG uploads, through payment, proof, review and payout. Live at https://tablematch-prototype.onrender.com.",
+      "evidence": [
+        "submission/run_end_to_end.py",
+        "submission/evidence/end_to_end_simulated.json",
+        "tests/test_flow.py",
+        "tests/test_vision.py"
+      ],
+      "commands": [
+        "python -m pytest -q",
+        "python submission/run_end_to_end.py"
+      ],
+      "status": "complete; AI-mode end-to-end run pending API key",
+      "file_url": "https://github.com/wop29/TableMatch-Vf/blob/main/submission/01_working_prototype.md",
+      "evidence_urls": [
+        "https://github.com/wop29/TableMatch-Vf/blob/main/submission/run_end_to_end.py",
+        "https://github.com/wop29/TableMatch-Vf/blob/main/submission/evidence/end_to_end_simulated.json",
+        "https://github.com/wop29/TableMatch-Vf/blob/main/tests/test_flow.py",
+        "https://github.com/wop29/TableMatch-Vf/blob/main/tests/test_vision.py"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "Simplified workflow",
+      "points": 20,
+      "file": "submission/02_simplified_workflow.md",
+      "claim": "One model call in a 15-step flow (photo placement judgment); 11 steps are deterministic rules and 3 are people. Rules gate the AI before and route its answer after.",
+      "evidence": [
+        "app/matching.py",
+        "app/evidence.py",
+        "app/vision.py",
+        "app/payments.py"
+      ],
+      "status": "complete",
+      "file_url": "https://github.com/wop29/TableMatch-Vf/blob/main/submission/02_simplified_workflow.md",
+      "evidence_urls": [
+        "https://github.com/wop29/TableMatch-Vf/blob/main/app/matching.py",
+        "https://github.com/wop29/TableMatch-Vf/blob/main/app/evidence.py",
+        "https://github.com/wop29/TableMatch-Vf/blob/main/app/vision.py",
+        "https://github.com/wop29/TableMatch-Vf/blob/main/app/payments.py"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "Knowledge source",
+      "points": 10,
+      "file": "submission/03_knowledge_source.md",
+      "claim": "Placement proof guidelines wired into the AI prompt as context via keyed lookup by slot type; retrieval rejected because the source is ~470 words and the right section is known exactly.",
+      "evidence": [
+        "knowledge/placement_guidelines.md",
+        "app/knowledge.py",
+        "app/vision.py",
+        "tests/test_vision.py"
+      ],
+      "status": "complete",
+      "file_url": "https://github.com/wop29/TableMatch-Vf/blob/main/submission/03_knowledge_source.md",
+      "evidence_urls": [
+        "https://github.com/wop29/TableMatch-Vf/blob/main/knowledge/placement_guidelines.md",
+        "https://github.com/wop29/TableMatch-Vf/blob/main/app/knowledge.py",
+        "https://github.com/wop29/TableMatch-Vf/blob/main/app/vision.py",
+        "https://github.com/wop29/TableMatch-Vf/blob/main/tests/test_vision.py"
+      ]
+    },
+    {
+      "id": 4,
+      "name": "Eval pack",
+      "points": 40,
+      "file": "submission/04_eval_pack.md",
+      "claim": "20 golden cases with expected outputs; team scores; cross-model judge (Opus 5.5) on 10 with agreement rate; top three failure patterns.",
+      "evidence": [
+        "evals/golden/golden_cases.jsonl",
+        "evals/golden/images/",
+        "evals/golden/run_model_evals.py",
+        "evals/golden/score_golden.py",
+        "evals/golden/team_scores.csv",
+        "evals/README.md",
+        "evals/baseline/summary.md"
+      ],
+      "commands": [
+        "python evals/golden/run_model_evals.py",
+        "python evals/golden/score_golden.py",
+        "python evals/run_evals.py"
+      ],
+      "status": "golden set, judge and scripts complete; model run and team scores pending",
+      "file_url": "https://github.com/wop29/TableMatch-Vf/blob/main/submission/04_eval_pack.md",
+      "evidence_urls": [
+        "https://github.com/wop29/TableMatch-Vf/blob/main/evals/golden/golden_cases.jsonl",
+        "https://github.com/wop29/TableMatch-Vf/blob/main/evals/golden/images/",
+        "https://github.com/wop29/TableMatch-Vf/blob/main/evals/golden/run_model_evals.py",
+        "https://github.com/wop29/TableMatch-Vf/blob/main/evals/golden/score_golden.py",
+        "https://github.com/wop29/TableMatch-Vf/blob/main/evals/golden/team_scores.csv",
+        "https://github.com/wop29/TableMatch-Vf/blob/main/evals/README.md",
+        "https://github.com/wop29/TableMatch-Vf/blob/main/evals/baseline/summary.md"
+      ]
+    },
+    {
+      "id": 5,
+      "name": "Unit economics",
+      "points": 25,
+      "file": "submission/05_unit_economics.md",
+      "claim": "Same 10 tasks on Sonnet 5.5 and Haiku 5.5: latency p50/p95, cost per 100 runs, quality, and a stated trade-off rule (cheaper tier only with zero false verifies and within 10 points of quality).",
+      "evidence": [
+        "evals/golden/run_model_evals.py",
+        "evals/golden/score_golden.py",
+        "submission/evidence/Tablematch_Unit_Economics_and_Business_Model.md"
+      ],
+      "status": "method and estimate complete; measured comparison pending API key",
+      "file_url": "https://github.com/wop29/TableMatch-Vf/blob/main/submission/05_unit_economics.md",
+      "evidence_urls": [
+        "https://github.com/wop29/TableMatch-Vf/blob/main/evals/golden/run_model_evals.py",
+        "https://github.com/wop29/TableMatch-Vf/blob/main/evals/golden/score_golden.py",
+        "https://github.com/wop29/TableMatch-Vf/blob/main/submission/evidence/Tablematch_Unit_Economics_and_Business_Model.md"
+      ]
+    },
+    {
+      "id": 6,
+      "name": "Commercial",
+      "points": 25,
+      "file": "submission/06_commercial.md",
+      "claim": "Brands pay a 30% fee capped at $3,000 via escrow; base case $310 contribution per $1,200 deal, break-even at 40 transactions a month; pilot plan tests deal size, repeat purchase and take rate.",
+      "evidence": [
+        "submission/evidence/Tablematch_Unit_Economics_and_Business_Model.md",
+        "submission/evidence/Tablematch_Board_Deck.pptx"
+      ],
+      "status": "complete",
+      "file_url": "https://github.com/wop29/TableMatch-Vf/blob/main/submission/06_commercial.md",
+      "evidence_urls": [
+        "https://github.com/wop29/TableMatch-Vf/blob/main/submission/evidence/Tablematch_Unit_Economics_and_Business_Model.md",
+        "https://github.com/wop29/TableMatch-Vf/blob/main/submission/evidence/Tablematch_Board_Deck.pptx"
+      ]
+    }
+  ],
+  "live_app": "https://tablematch-prototype.onrender.com"
+}

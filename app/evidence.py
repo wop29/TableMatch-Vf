@@ -7,7 +7,8 @@ Five modules, kept separate so each could later be swapped for a real service:
   D. risk        0-100 score from weighted factors plus "must review" triggers (real arithmetic on simulated inputs)
   E. decide      low risk -> verified, medium -> more evidence or review, high -> human review
 
-Nothing here calls an outside API. Real uploads always pass. The demo scenarios
+Nothing here calls an outside API unless ANTHROPIC_API_KEY is set: then real uploads get one real
+visual check (app/vision.py), with placement guidelines as context (app/knowledge.py). Without a key, real uploads always pass. The demo scenarios
 ("reused", "ai_signals", ...) exist only to show what the other outcomes look like.
 AI findings never reject a host or move money on their own: people do that.
 """
@@ -19,6 +20,7 @@ from PIL import Image, ImageFilter
 from PIL.ExifTags import TAGS
 
 from . import db
+from . import vision as vision_model
 
 SIMULATED = True
 
@@ -174,7 +176,9 @@ def decide(band, scenario):
 
 
 # ---------------------------------------------------------------- the whole pipeline
-def run(order, files, scenario, uploader, note="", links=None, checkins=None, capture_session=None, blur_faces=False):
+def run(order, files, scenario, uploader, note="", links=None, checkins=None, capture_session=None, blur_faces=False,
+        use_ai=False):
+    """use_ai: True only for real host uploads, so seeding and sample buttons never call a model."""
     scenario = LEGACY.get(scenario, scenario) or "authentic"
     if scenario not in SCENARIOS:
         scenario = "authentic"
@@ -182,17 +186,35 @@ def run(order, files, scenario, uploader, note="", links=None, checkins=None, ca
     event = db.one("SELECT * FROM events WHERE id=?", (slot["event_id"],))
     sponsor = db.one("SELECT * FROM sponsors WHERE id=?", (order["sponsor_id"],))
     stored = ingest(order, files, uploader, capture_session, blur_faces)
-    findings = provenance(stored, scenario) + vision(stored, slot, sponsor, event, scenario)
+    real = None
+    photos = [(n, d, m) for (n, d, m), x in zip(files, stored) if x["kind"] == "photo"]
+    if use_ai and scenario == "authentic" and photos and vision_model.enabled():
+        # Real uploads with an API key: the one AI judgment in the flow. Rules decide what happens next.
+        real = vision_model.check(photos[:4], sponsor["name"], sponsor.get("category") or sponsor.get("cat") or "", slot)
+    if real:
+        r = real["raw"] or {}
+        vfind = [("vision", k, "ok" if r.get(k) else "warn", f"{k.replace('_', ' ')}: {r.get(k)}", False)
+                 for k in ("logo_visible", "brand_matches", "placement_matches")]
+        vfind.append(("vision", "notes", "info", (r.get("notes") or real.get("error") or "")[:300], False))
+        findings = provenance(stored, scenario) + vfind
+    else:
+        findings = provenance(stored, scenario) + vision(stored, slot, sponsor, event, scenario)
     score, band, parts, triggers = risk(scenario, stored, slot)
     decision, status, explanation = decide(band, scenario)
+    if real and real["route"] != "verified":
+        decision = real["route"]
+        status = "in_escrow" if decision == "more_evidence" else "under_review"
+        explanation = real["explanation"]
+        if decision == "needs_review":
+            band = "medium" if band == "low" else band
     # placeholder cost per checked file, so the fee page still shows what checks would cost
-    cost = round(len(stored) * float(db.get_settings()["ai_cost_per_photo"]), 4)
+    cost = real["cost_usd"] if real else round(len(stored) * float(db.get_settings()["ai_cost_per_photo"]), 4)
     checks = [{"label": f"{f[3]}{' (simulated)' if f[4] else ''}", "ok": f[2] in ("ok", "info")} for f in findings]
     if links:
         checks.append({"label": f"{len(links)} social post link(s) submitted as extra proof", "ok": True})
     if checkins is not None:
         checks.append({"label": f"{checkins} of {event['guests']} expected guests checked in", "ok": checkins >= event["guests"] * 0.5})
-    pid = db.insert("proofs", order_id=order["id"], created=now(), mode="simulated",
+    pid = db.insert("proofs", order_id=order["id"], created=now(), mode="claude" if real else "simulated",
                     decision={"verified": "verified", "more_evidence": "rejected"}.get(decision, "needs_review"),
                     confidence=round(1 - score / 100, 2), checks=checks, notes=explanation,
                     photos=[x["shared"] for x in stored if x["kind"] == "photo"], ai_cost=cost, reviewer_note="",
@@ -209,7 +231,7 @@ def run(order, files, scenario, uploader, note="", links=None, checkins=None, ca
     db.update("orders", order["id"], status=status, note=explanation)
     if cost:
         db.insert("ledger", order_id=order["id"], ts=now(), kind="ai_check", amount=cost,
-                  note=f"Simulated check on {len(stored)} file(s)")
+                  note=(f"AI visual check ({real['model']}) on {len(photos[:4])} photo(s)" if real else f"Simulated check on {len(stored)} file(s)"))
     audit(uploader, "host", "evidence_submitted", order["id"],
           f"{len(stored)} file(s), risk {score} ({band}), outcome: {decision}" + (", faces blurred" if blur_faces else ""))
     return decision

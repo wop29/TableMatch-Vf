@@ -1,0 +1,221 @@
+{
+  "mode": "simulated",
+  "brief": "Specialty coffee brand looking for creative, design-minded dinners in Williamsburg, budget $700, menu mention",
+  "steps": [
+    {
+      "step": 1,
+      "name": "Reset the demo database",
+      "request": "POST /api/reset",
+      "status": 200,
+      "ms": 395,
+      "result": "ok"
+    },
+    {
+      "step": 2,
+      "name": "Brand search from a free-text brief",
+      "request": "POST /api/search/events",
+      "status": 200,
+      "ms": 23,
+      "result": {
+        "parsed": {
+          "vibes": [
+            "creative"
+          ],
+          "audiences": [],
+          "interests": [
+            "design"
+          ],
+          "places": [
+            "Williamsburg"
+          ],
+          "budget": 700.0,
+          "slot_types": [
+            "menu"
+          ]
+        },
+        "top3": [
+          [
+            "Smoke and stone fruit",
+            100
+          ],
+          [
+            "The long summer table",
+            50
+          ],
+          [
+            "Test kitchen: fermentation",
+            50
+          ]
+        ],
+        "hidden": {
+          "filters": 0,
+          "budget": 1,
+          "category": 0,
+          "capacity": 0,
+          "excluded": 0
+        }
+      }
+    },
+    {
+      "step": 3,
+      "name": "Host-side check: brands ranked for that dinner",
+      "request": "POST /api/search/sponsors",
+      "status": 200,
+      "ms": 8,
+      "result": {
+        "top3": [
+          [
+            "Sunbrew",
+            87
+          ],
+          [
+            "Glowlab",
+            70
+          ],
+          [
+            "Copperhollow",
+            65
+          ]
+        ],
+        "package": [
+          {
+            "sponsor": "Sunbrew",
+            "slot": "Table sponsor",
+            "price": 1000.0
+          },
+          {
+            "sponsor": "Glowlab",
+            "slot": "Welcome drink",
+            "price": 900.0
+          }
+        ]
+      }
+    },
+    {
+      "step": 4,
+      "name": "Brand buys the menu slot",
+      "request": "POST /api/slots/1/buy",
+      "status": 200,
+      "ms": 7,
+      "result": {
+        "order": 8,
+        "price": 300.0,
+        "status": "awaiting_payment"
+      }
+    },
+    {
+      "step": 5,
+      "name": "Brand pays into escrow",
+      "request": "POST /api/orders/8/pay",
+      "status": 200,
+      "ms": 6,
+      "result": {
+        "status": "in_escrow"
+      }
+    },
+    {
+      "step": 6,
+      "name": "Host uploads a real photo of the menu card (g01.jpg)",
+      "request": "POST /api/orders/8/proof",
+      "status": 200,
+      "ms": 27,
+      "result": {
+        "status": "ready_for_payout",
+        "mode": "simulated",
+        "risk": [
+          3,
+          "low"
+        ],
+        "decision": "verified",
+        "note": "Low risk and every requirement met. Verified automatically.",
+        "file_sha256": "ed1ff66bd592b8a9"
+      }
+    },
+    {
+      "step": 7,
+      "name": "Sponsor confirms the placement",
+      "request": "POST /api/orders/8/signoff",
+      "status": 200,
+      "ms": 7,
+      "result": {
+        "signoff": "confirmed"
+      }
+    },
+    {
+      "step": 8,
+      "name": "Platform previews the payout",
+      "request": "GET /api/orders/8/payout-preview",
+      "status": 200,
+      "ms": 2,
+      "result": {
+        "fee": 90.0,
+        "net": 210.0,
+        "rate": 0.3,
+        "cap": 3000.0
+      }
+    },
+    {
+      "step": 9,
+      "name": "Platform releases the payout",
+      "request": "POST /api/orders/8/release",
+      "status": 200,
+      "ms": 11,
+      "result": {
+        "status": "released",
+        "fee": 90.0,
+        "net": 210.0
+      }
+    },
+    {
+      "step": 10,
+      "name": "Second deal: Spicewell buys a menu slot",
+      "request": "POST /api/slots/17/buy",
+      "status": 200,
+      "ms": 13,
+      "result": {
+        "order": 9,
+        "price": 250.0
+      }
+    },
+    {
+      "step": 11,
+      "name": "Second deal: pays into escrow",
+      "request": "POST /api/orders/9/pay",
+      "status": 200,
+      "ms": 6,
+      "result": {
+        "status": "in_escrow"
+      }
+    },
+    {
+      "step": 12,
+      "name": "Second deal: host uploads a photo with no logo (g04.jpg)",
+      "request": "POST /api/orders/9/proof",
+      "status": 200,
+      "ms": 21,
+      "result": {
+        "status": "ready_for_payout",
+        "mode": "simulated",
+        "decision": "verified",
+        "note": "Low risk and every requirement met. Verified automatically."
+      }
+    },
+    {
+      "step": 13,
+      "name": "Audit trail",
+      "request": "GET /api/audit",
+      "status": 200,
+      "ms": 2,
+      "result": [
+        "Theo Lin (Midnight Noodle Society): evidence_submitted",
+        "Sponsor: paid_into_escrow",
+        "Platform: payout_released",
+        "Sponsor: signoff_confirm",
+        "Maya Okafor (Fig & Ember): evidence_submitted",
+        "Sponsor: paid_into_escrow",
+        "Theo Lin (Midnight Noodle Society): evidence_submitted",
+        "Kofi Mensah (Dawn Patrol Run Club): evidence_submitted"
+      ]
+    }
+  ]
+}
